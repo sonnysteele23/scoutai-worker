@@ -1,0 +1,242 @@
+/**
+ * Lever ATS applier — jobs.lever.co
+ *
+ * Lever form structure:
+ * 1. Name, email, phone, company, location (top section)
+ * 2. Resume upload (drag-drop or file input)
+ * 3. LinkedIn, Twitter, website (optional links)
+ * 4. Cover letter textarea (optional)
+ * 5. Custom questions (varies by job)
+ * 6. EEO section (optional, at bottom)
+ * 7. Submit button
+ */
+import { Page } from "playwright";
+import { ApplicationProfile, FilledField } from "../types";
+import { analyzeFormAndFill, answerCustomQuestion } from "./claude";
+import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume } from "./browser";
+import * as fs from "fs";
+
+export interface LeverResult {
+  success: boolean;
+  questionsAnswered: { question: string; answer: string }[];
+  confirmationScreenshot?: string;
+  failureReason?: string;
+  failureCategory?: "captcha" | "missing_field" | "custom_question" | "timeout" | "other";
+}
+
+export async function applyLever(
+  page: Page,
+  applyUrl: string,
+  profile: ApplicationProfile,
+  resumeBase64: string,
+  resumeFileName: string,
+  coverLetterText: string,
+  jobTitle: string,
+  company: string,
+  jobDescription: string,
+  dryRun = false
+): Promise<LeverResult> {
+  const questionsAnswered: { question: string; answer: string }[] = [];
+
+  try {
+    console.log(`[lever] Navigating to ${applyUrl}`);
+    await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(2000);
+
+    if (await hasCaptcha(page)) {
+      return { success: false, questionsAnswered, failureReason: "CAPTCHA detected", failureCategory: "captcha" };
+    }
+
+    // ── Get form snapshot + AI analysis ──────────────────────────────────
+    const snapshot = await getPageSnapshot(page);
+    const fields: FilledField[] = await analyzeFormAndFill(
+      snapshot, profile, jobTitle, company, jobDescription, coverLetterText
+    );
+    console.log(`[lever] ${fields.length} fields to fill`);
+
+    // ── Fill standard fields ──────────────────────────────────────────────
+    for (const field of fields) {
+      if (field.type === "file") continue;
+      try {
+        await fillLeverField(page, field);
+        questionsAnswered.push({ question: field.label, answer: field.value });
+      } catch (e) {
+        console.warn(`[lever] Skip "${field.label}": ${(e as Error).message}`);
+      }
+    }
+
+    // ── Lever-specific: fill known fields by name attribute ──────────────
+    await fillKnownFields(page, profile);
+
+    // ── Resume upload ─────────────────────────────────────────────────────
+    await uploadResumeLever(page, resumeBase64, resumeFileName);
+
+    // ── Cover letter ──────────────────────────────────────────────────────
+    if (coverLetterText) {
+      await fillCoverLetter(page, coverLetterText);
+      questionsAnswered.push({ question: "Cover Letter", answer: coverLetterText.slice(0, 100) + "..." });
+    }
+
+    // ── Custom questions ──────────────────────────────────────────────────
+    await handleCustomQuestions(page, profile, jobTitle, company, jobDescription, questionsAnswered);
+
+    // ── Submit ────────────────────────────────────────────────────────────
+    if (!dryRun) {
+      const submitted = await submitLever(page);
+      if (!submitted) return { success: false, questionsAnswered, failureReason: "No submit button found", failureCategory: "other" };
+      await page.waitForTimeout(3000);
+    }
+
+    const shot = await screenshot(page);
+    const text = await page.evaluate(() => document.body.innerText);
+    const confirmed = /thank you|application received|submitted|confirmation|on file/i.test(text);
+    if (!dryRun && !confirmed) console.warn("[lever] Confirmation text not found");
+
+    return { success: true, questionsAnswered, confirmationScreenshot: shot };
+
+  } catch (err) {
+    const msg = (err as Error).message;
+    return { success: false, questionsAnswered, failureReason: msg, failureCategory: msg.includes("timeout") ? "timeout" : "other" };
+  }
+}
+
+async function fillLeverField(page: Page, field: FilledField): Promise<void> {
+  const { selector, value, type } = field;
+  if (!selector || !value) return;
+
+  const loc = page.locator(selector).first();
+  const visible = await loc.isVisible({ timeout: 2000 }).catch(() => false);
+  if (!visible) return;
+
+  if (type === "select") {
+    await loc.selectOption({ label: value }).catch(() => loc.selectOption(value));
+  } else if (type === "textarea") {
+    await loc.click();
+    await loc.fill(value);
+  } else {
+    await loc.click();
+    await loc.fill("");
+    await loc.type(value, { delay: 25 });
+  }
+}
+
+async function fillKnownFields(page: Page, profile: ApplicationProfile): Promise<void> {
+  // Lever uses specific input names
+  const knownFields: Record<string, string> = {
+    "name": `${profile.firstName} ${profile.lastName}`,
+    "email": profile.email,
+    "phone": profile.phone,
+    "org": "",           // current company — leave blank
+    "urls[LinkedIn]": profile.linkedinUrl || "",
+    "urls[Portfolio]": profile.portfolioUrl || "",
+    "urls[GitHub]": profile.githubUrl || "",
+    "location": `${profile.city}, ${profile.state}`,
+  };
+
+  for (const [name, value] of Object.entries(knownFields)) {
+    if (!value) continue;
+    const loc = page.locator(`[name="${name}"]`).first();
+    if (await loc.isVisible({ timeout: 1500 }).catch(() => false)) {
+      const current = await loc.inputValue().catch(() => "");
+      if (!current) {
+        await loc.fill(value);
+      }
+    }
+  }
+}
+
+async function uploadResumeLever(page: Page, resumeBase64: string, resumeFileName: string): Promise<void> {
+  let tempPath: string | null = null;
+  try {
+    tempPath = writeTempResume(resumeBase64, resumeFileName);
+    const fileInput = page.locator("input[type='file']").first();
+    if (await fileInput.count() > 0) {
+      await fileInput.setInputFiles(tempPath);
+      await page.waitForTimeout(1500);
+      console.log("[lever] Resume uploaded");
+    }
+  } finally {
+    if (tempPath) {
+      try { fs.unlinkSync(tempPath); fs.rmdirSync(require("path").dirname(tempPath)); } catch {}
+    }
+  }
+}
+
+async function fillCoverLetter(page: Page, text: string): Promise<void> {
+  // Lever cover letter: textarea with class or label "Cover Letter"
+  const selectors = [
+    "textarea[name='comments']",
+    "textarea[placeholder*='cover letter' i]",
+    "textarea[aria-label*='cover letter' i]",
+    ".cover-letter textarea",
+  ];
+  for (const sel of selectors) {
+    const el = page.locator(sel).first();
+    if (await el.isVisible({ timeout: 1500 }).catch(() => false)) {
+      const current = await el.inputValue().catch(() => "");
+      if (!current) {
+        await el.fill(text);
+        return;
+      }
+    }
+  }
+}
+
+async function handleCustomQuestions(
+  page: Page,
+  profile: ApplicationProfile,
+  jobTitle: string,
+  company: string,
+  jobDescription: string,
+  qa: { question: string; answer: string }[]
+): Promise<void> {
+  const empties = await page.evaluate(() => {
+    const res: { label: string; selector: string; tag: string }[] = [];
+    document.querySelectorAll<HTMLElement>("input[type='text'], textarea").forEach((el, i) => {
+      const val = (el as HTMLInputElement).value;
+      if (val && val.trim()) return;
+      const name = (el as HTMLInputElement).name || "";
+      if (["name", "email", "phone", "org", "location"].some(k => name.includes(k))) return;
+      const lbl = el.closest(".application-question, .field, [class*='question']")
+        ?.querySelector("label, h4, p")?.textContent?.trim() || "";
+      if (!lbl || lbl.length < 8) return;
+      const sel = el.id ? `#${el.id}` : name ? `[name="${name}"]` : `${el.tagName.toLowerCase()}:nth-of-type(${i + 1})`;
+      res.push({ label: lbl, selector: sel, tag: el.tagName.toLowerCase() });
+    });
+    return res;
+  });
+
+  for (const q of empties) {
+    const answer = await answerCustomQuestion(q.label, profile, jobTitle, company, jobDescription);
+    if (!answer) continue;
+    try {
+      const el = page.locator(q.selector).first();
+      if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await el.fill(answer);
+        qa.push({ question: q.label, answer });
+        console.log(`[lever] Answered: "${q.label.slice(0, 50)}"`);
+      }
+    } catch {}
+  }
+}
+
+async function submitLever(page: Page): Promise<boolean> {
+  const selectors = [
+    "button[type='submit']",
+    "input[type='submit']",
+    "button:has-text('Submit Application')",
+    "button:has-text('Submit')",
+    "button:has-text('Apply')",
+    ".btn-submit",
+    "#btn-submit",
+  ];
+  for (const sel of selectors) {
+    const btn = page.locator(sel).first();
+    if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await btn.click();
+      console.log(`[lever] Submitted via ${sel}`);
+      return true;
+    }
+  }
+  return false;
+}
