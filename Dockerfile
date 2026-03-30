@@ -8,14 +8,17 @@ RUN apt-get update && apt-get install -y curl && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
+# Copy package files and install ALL deps (including devDeps for build)
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Copy source and build
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN node_modules/typescript/bin/tsc
 
-# Copy built files
-COPY dist/ ./dist/
+# Remove devDeps to slim image
+RUN npm prune --omit=dev
 
 # Expose port
 EXPOSE 3001

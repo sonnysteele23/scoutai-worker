@@ -1,7 +1,6 @@
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
-buildCommand = "npm ci && npm run build"
 
 [deploy]
 startCommand = "node dist/index.js"
