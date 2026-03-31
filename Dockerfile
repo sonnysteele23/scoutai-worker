@@ -1,4 +1,4 @@
-# Cache bust: v3 — 2026-03-31
+# Cache bust: v4 — 2026-03-31
 # Stage 1: Build TypeScript with Node 20
 FROM node:20-slim AS builder
 WORKDIR /build
