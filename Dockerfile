@@ -17,7 +17,7 @@ RUN echo "Node: $(node --version) | npm: $(npm --version)"
 
 # Install production deps only — skip playwright postinstall (browsers already in image)
 COPY package*.json ./
-RUN npm install --omit=dev --ignore-scripts
+RUN npm install --omit=dev
 
 # Copy compiled JS from builder stage
 COPY --from=builder /build/dist ./dist
