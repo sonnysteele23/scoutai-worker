@@ -27,3 +27,4 @@ RUN node -e "const pw = require('playwright'); console.log('Playwright OK, brows
 
 EXPOSE 8080
 CMD ["node", "dist/boot.js"]
+# redeploy Tue Mar 31 13:26:47 PDT 2026
