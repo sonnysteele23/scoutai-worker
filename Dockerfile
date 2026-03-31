@@ -2,23 +2,21 @@ FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 
 WORKDIR /app
 
-# Install Node.js 20
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# The Playwright image already ships Node.js — don't install another one
+# Just verify it's available
+RUN node --version && npm --version
 
 # Copy package files and install ALL deps (including devDeps for build)
 COPY package*.json ./
 RUN npm ci
 
-# Copy source and build
+# Copy source and build TypeScript
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN rm -rf dist && node_modules/typescript/bin/tsc && ls -la dist/
+RUN rm -rf dist && npx tsc && ls -la dist/
 
 # Remove devDeps to slim image
 RUN npm prune --omit=dev
 
-# Railway injects PORT — no HEALTHCHECK here, railway.toml handles it
-CMD ["node", "dist/index.js"]
+# Wrap startup in a shell to catch crashes and print diagnostics
+CMD node dist/index.js 2>&1 || (echo "[CRASH] Node exited with code $?" && exit 1)
