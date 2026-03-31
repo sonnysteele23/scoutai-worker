@@ -15,16 +15,10 @@ RUN npm ci
 # Copy source and build
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN node_modules/typescript/bin/tsc
+RUN rm -rf dist && node_modules/typescript/bin/tsc && ls -la dist/
 
 # Remove devDeps to slim image
 RUN npm prune --omit=dev
 
-# Expose port
-EXPOSE 3001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:3001/health || exit 1
-
+# Railway injects PORT — no HEALTHCHECK here, railway.toml handles it
 CMD ["node", "dist/index.js"]
