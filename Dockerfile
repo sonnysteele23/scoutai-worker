@@ -15,9 +15,12 @@ WORKDIR /app
 # DO NOT install Node.js — the Playwright image already has it
 RUN echo "Node: $(node --version) | npm: $(npm --version)"
 
-# Install production deps only — skip playwright postinstall (browsers already in image)
+# Tell Playwright to use the pre-installed browsers from the Docker image
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Install production deps — skip scripts to avoid re-downloading browsers
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 
 # Copy compiled JS from builder stage
 COPY --from=builder /build/dist ./dist
