@@ -1,22 +1,25 @@
-FROM mcr.microsoft.com/playwright:v1.58.2-jammy
-
+# Stage 1: Build TypeScript with Node 20
+FROM node:20-slim AS builder
 WORKDIR /app
-
-# The Playwright image already ships Node.js — don't install another one
-# Just verify it's available
-RUN node --version && npm --version
-
-# Copy package files and install ALL deps (including devDeps for build)
 COPY package*.json ./
 RUN npm ci
-
-# Copy source and build TypeScript
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN rm -rf dist && npx tsc && ls -la dist/
+RUN npx tsc && ls -la dist/
 
-# Remove devDeps to slim image
-RUN npm prune --omit=dev
+# Stage 2: Runtime with Playwright + Chromium
+FROM mcr.microsoft.com/playwright:v1.58.2-jammy
+WORKDIR /app
 
-# Wrap startup in a shell to catch crashes and print diagnostics
-CMD node dist/index.js 2>&1 || (echo "[CRASH] Node exited with code $?" && exit 1)
+# Copy built app and production deps
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=builder /app/dist ./dist
+
+# Verify everything is in place
+RUN ls -la dist/index.js && node -e "console.log('Node', process.version, 'OK')"
+
+EXPOSE 8080
+ENV PORT=8080
+
+CMD ["node", "dist/index.js"]
