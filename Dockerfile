@@ -11,20 +11,30 @@ RUN npx tsc && ls -la dist/
 FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 WORKDIR /app
 
-# Playwright browsers are already installed in this image
-# PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD tells postinstall not to re-download
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# Show what browsers are pre-installed in the image
+RUN echo "=== Pre-installed browsers ===" && ls -la /ms-playwright/ && find /ms-playwright -maxdepth 2 -type d
+
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV PORT=8080
 
 COPY package*.json ./
-RUN npm install --omit=dev && echo "npm install done"
+RUN npm install --omit=dev
 
 COPY --from=builder /build/dist ./dist
 
-# Verify
-RUN node -e "const pw = require('playwright'); console.log('Playwright OK, browsers at', pw.chromium.executablePath())"
+# Verify browser path at build time
+RUN node -e "\
+  const pw = require('playwright');\
+  const path = pw.chromium.executablePath();\
+  const fs = require('fs');\
+  console.log('Browser executable:', path);\
+  console.log('Exists:', fs.existsSync(path));\
+  if (!fs.existsSync(path)) {\
+    console.log('Looking for alternatives...');\
+    const { execSync } = require('child_process');\
+    console.log(execSync('find /ms-playwright -name chrome-headless-shell -o -name chromium 2>/dev/null || echo NONE FOUND').toString());\
+  }\
+"
 
 EXPOSE 8080
 CMD ["node", "dist/boot.js"]
-# redeploy Tue Mar 31 13:26:47 PDT 2026
