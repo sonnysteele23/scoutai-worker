@@ -1,28 +1,29 @@
-# Stage 1: Build TypeScript
+# Cache bust: v3 — 2026-03-31
+# Stage 1: Build TypeScript with Node 20
 FROM node:20-slim AS builder
-WORKDIR /app
+WORKDIR /build
 COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN npx tsc
+RUN npx tsc && ls -la dist/
 
-# Stage 2: Runtime
+# Stage 2: Runtime with Playwright + Chromium
 FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 WORKDIR /app
 
-# Copy package files
+# DO NOT install Node.js — the Playwright image already has it
+RUN echo "Node: $(node --version) | npm: $(npm --version)"
+
+# Install production deps only — skip playwright postinstall (browsers already in image)
 COPY package*.json ./
+RUN npm install --omit=dev --ignore-scripts
 
-# Install production deps — playwright is already in the base image
-# but other deps (express, axios, etc.) need to be installed
-RUN npm install --omit=dev --ignore-scripts 2>&1
+# Copy compiled JS from builder stage
+COPY --from=builder /build/dist ./dist
 
-# Copy compiled JS from builder
-COPY --from=builder /app/dist ./dist
-
-# Verify
-RUN node -e "require('express'); require('playwright'); console.log('All deps OK')" 2>&1
+# Verify everything loads
+RUN node -e "require('express'); require('playwright'); console.log('All deps loaded OK')"
 
 EXPOSE 8080
 ENV PORT=8080
