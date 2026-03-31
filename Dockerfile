@@ -1,23 +1,28 @@
-# Stage 1: Build TypeScript with Node 20
+# Stage 1: Build TypeScript
 FROM node:20-slim AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN npx tsc && ls -la dist/
+RUN npx tsc
 
-# Stage 2: Runtime with Playwright + Chromium
+# Stage 2: Runtime
 FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 WORKDIR /app
 
-# Copy built app and production deps
+# Copy package files
 COPY package*.json ./
-RUN npm ci --omit=dev
+
+# Install production deps — playwright is already in the base image
+# but other deps (express, axios, etc.) need to be installed
+RUN npm install --omit=dev --ignore-scripts 2>&1
+
+# Copy compiled JS from builder
 COPY --from=builder /app/dist ./dist
 
-# Verify everything is in place
-RUN ls -la dist/index.js && node -e "console.log('Node', process.version, 'OK')"
+# Verify
+RUN node -e "require('express'); require('playwright'); console.log('All deps OK')" 2>&1
 
 EXPOSE 8080
 ENV PORT=8080
