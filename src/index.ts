@@ -1,11 +1,4 @@
-// dotenv only needed locally — Railway injects env vars directly
-try { require("dotenv/config"); } catch { /* no .env file in container — OK */ }
-
 import express, { Request, Response, NextFunction } from "express";
-
-// Crash diagnostics — log immediately so Railway shows SOMETHING
-console.log(`[boot] ScoutAI worker starting — Node ${process.version} — PID ${process.pid}`);
-console.log(`[boot] PORT=${process.env.PORT || "not set"} — ENV keys: ${Object.keys(process.env).filter(k => !k.startsWith("npm_")).length}`);
 import { enqueue, getJob, getAllJobs } from "./queue";
 import { ApplyJobRequest } from "./types";
 import { closeBrowser } from "./applier/browser";

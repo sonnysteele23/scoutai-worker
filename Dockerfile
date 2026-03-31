@@ -28,4 +28,4 @@ RUN node -e "require('express'); require('playwright'); console.log('All deps lo
 EXPOSE 8080
 ENV PORT=8080
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/boot.js"]
