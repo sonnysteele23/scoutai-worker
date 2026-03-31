@@ -1,4 +1,4 @@
-import { Browser, BrowserContext, Page, chromium } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -7,6 +7,7 @@ let _browser: Browser | null = null;
 
 export async function getBrowser(): Promise<Browser> {
   if (!_browser || !_browser.isConnected()) {
+    const { chromium } = require("playwright");
     _browser = await chromium.launch({
       headless: process.env.PLAYWRIGHT_HEADLESS !== "false",
       args: [
