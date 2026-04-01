@@ -12,6 +12,7 @@ import { Page } from "playwright";
 import { ApplicationProfile, FilledField } from "../types";
 import { analyzeFormAndFill, answerCustomQuestion } from "./claude";
 import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume, humanDelay, humanScroll, humanScan, humanType } from "./browser";
+import { handleCaptcha } from "./captcha-solver";
 import * as fs from "fs";
 
 export interface GreenhouseResult {
@@ -47,7 +48,13 @@ export async function applyGreenhouse(
     await humanDelay(500, 1500);
 
     if (await hasCaptcha(page)) {
-      return { success: false, questionsAnswered, failureReason: "CAPTCHA detected on page", failureCategory: "captcha" };
+      console.log("[greenhouse] CAPTCHA detected — attempting to solve...");
+      const solved = await handleCaptcha(page);
+      if (!solved) {
+        return { success: false, questionsAnswered, failureReason: "CAPTCHA detected — solver unavailable or failed", failureCategory: "captcha" };
+      }
+      console.log("[greenhouse] CAPTCHA solved, continuing...");
+      await humanDelay(1000, 2000);
     }
 
     // ── Step 1: Get AI analysis of form ──────────────────────────────────
@@ -82,14 +89,27 @@ export async function applyGreenhouse(
 
     // ── Step 5: Submit (with human-like pause before clicking) ─────────
     if (!dryRun) {
-      await humanDelay(1000, 3000); // pause like you're reviewing
-      await humanScroll(page, -100); // scroll up slightly to see submit
+      await humanDelay(1000, 3000);
+      await humanScroll(page, -100);
       await humanDelay(500, 1000);
       const submitted = await submitForm(page);
       if (!submitted) {
         return { success: false, questionsAnswered, failureReason: "Could not locate submit button", failureCategory: "other" };
       }
       await page.waitForTimeout(3000);
+
+      // Check for post-submit CAPTCHA
+      if (await hasCaptcha(page)) {
+        console.log("[greenhouse] Post-submit CAPTCHA detected — solving...");
+        const solved = await handleCaptcha(page);
+        if (!solved) {
+          return { success: false, questionsAnswered, failureReason: "Post-submit CAPTCHA — solver failed", failureCategory: "captcha" };
+        }
+        // Re-submit after solving
+        await humanDelay(1000, 2000);
+        await submitForm(page);
+        await page.waitForTimeout(3000);
+      }
     }
 
     const confirmShot = await screenshot(page);

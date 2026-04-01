@@ -14,6 +14,7 @@ import { Page } from "playwright";
 import { ApplicationProfile, FilledField } from "../types";
 import { analyzeFormAndFill, answerCustomQuestion } from "./claude";
 import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume, humanDelay, humanScroll, humanScan } from "./browser";
+import { handleCaptcha } from "./captcha-solver";
 import * as fs from "fs";
 
 export interface LeverResult {
@@ -44,7 +45,13 @@ export async function applyLever(
     await page.waitForTimeout(2000);
 
     if (await hasCaptcha(page)) {
-      return { success: false, questionsAnswered, failureReason: "CAPTCHA detected", failureCategory: "captcha" };
+      console.log("[lever] CAPTCHA detected — attempting to solve...");
+      const solved = await handleCaptcha(page);
+      if (!solved) {
+        return { success: false, questionsAnswered, failureReason: "CAPTCHA detected — solver unavailable or failed", failureCategory: "captcha" };
+      }
+      console.log("[lever] CAPTCHA solved, continuing...");
+      await humanDelay(1000, 2000);
     }
 
     // ── Get form snapshot + AI analysis ──────────────────────────────────
