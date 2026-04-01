@@ -104,8 +104,8 @@ CANDIDATE:
 - Education: ${profile.highestEducation}
 - Location: ${profile.city}, ${profile.state}
 
-Write a concise, professional answer (2-4 sentences). Sound human, not AI-generated. 
-Be specific but brief. Return ONLY the answer text, no quotes, no explanation.`
+Write a concise, professional answer. STRICT LIMIT: 200 words maximum, ideally 2-4 sentences.
+Sound human, not AI-generated. Be specific but brief. Return ONLY the answer text, no quotes, no explanation.`
     }],
   });
 
