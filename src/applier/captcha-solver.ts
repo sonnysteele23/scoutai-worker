@@ -12,6 +12,7 @@
 
 import { Page } from "playwright";
 
+// 2Captcha — supports all CAPTCHA types with one API key
 const API_KEY = process.env.TWOCAPTCHA_API_KEY || "";
 const BASE = "https://2captcha.com";
 
@@ -90,14 +91,16 @@ export async function solveCaptcha(info: CaptchaInfo): Promise<string | null> {
     return null;
   }
 
-  console.log(`[captcha] Solving ${info.type} (sitekey: ${info.sitekey.substring(0, 10)}...)`);
+  console.log(`[captcha] Solving ${info.type} via 2Captcha (sitekey: ${info.sitekey.substring(0, 10)}...)`);
 
   try {
     // Step 1: Submit CAPTCHA to 2Captcha
+    const method = info.type === "recaptcha" ? "userrecaptcha" :
+                   info.type === "hcaptcha" ? "hcaptcha" : "turnstile";
+
     const submitParams = new URLSearchParams({
       key: API_KEY,
-      method: info.type === "recaptcha" ? "userrecaptcha" :
-              info.type === "hcaptcha" ? "hcaptcha" : "turnstile",
+      method,
       sitekey: info.sitekey,
       pageurl: info.pageUrl,
       json: "1",
@@ -129,7 +132,7 @@ export async function solveCaptcha(info: CaptchaInfo): Promise<string | null> {
 
       if (resultData.status === 1) {
         console.log(`[captcha] Solved in ${Math.round((Date.now() - start) / 1000)}s`);
-        return resultData.request; // The solution token
+        return resultData.request;
       }
 
       if (resultData.request !== "CAPCHA_NOT_READY") {
