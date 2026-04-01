@@ -15,10 +15,13 @@ export async function getBrowser(): Promise<Browser> {
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-web-security",
         "--window-size=1280,900",
+        "--lang=en-US,en",
       ],
     });
-    console.log("[browser] Chromium launched");
+    console.log("[browser] Chromium launched (stealth mode)");
   }
   return _browser;
 }
@@ -31,18 +34,62 @@ export async function closeBrowser(): Promise<void> {
  * Create a stealth context that looks more human.
  */
 export async function createContext(browser: Browser): Promise<BrowserContext> {
+  // Randomize viewport slightly to avoid fingerprint matching
+  const w = 1280 + Math.floor(Math.random() * 40) - 20;
+  const h = 900 + Math.floor(Math.random() * 40) - 20;
+
   const ctx = await browser.newContext({
     userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: w, height: h },
     locale: "en-US",
     timezoneId: "America/New_York",
     permissions: [],
+    deviceScaleFactor: 2,
+    hasTouch: false,
+    isMobile: false,
+    javaScriptEnabled: true,
   });
 
-  // Mask automation signals
+  // Comprehensive anti-detection: mask automation signals
   await ctx.addInitScript(() => {
+    // Hide webdriver flag
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    (window as unknown as Record<string, unknown>).chrome = { runtime: {} };
+
+    // Add chrome runtime object
+    const w = window as unknown as Record<string, unknown>;
+    w.chrome = { runtime: {}, loadTimes: () => ({}), csi: () => ({}) };
+
+    // Spoof plugins (real browsers have plugins)
+    Object.defineProperty(navigator, "plugins", {
+      get: () => [
+        { name: "Chrome PDF Plugin", filename: "internal-pdf-viewer" },
+        { name: "Chrome PDF Viewer", filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai" },
+        { name: "Native Client", filename: "internal-nacl-plugin" },
+      ],
+    });
+
+    // Spoof languages
+    Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+
+    // Fix permissions API
+    const origQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+    window.navigator.permissions.query = (params: PermissionDescriptor) => {
+      if (params.name === "notifications") {
+        return Promise.resolve({ state: "denied", onchange: null } as PermissionStatus);
+      }
+      return origQuery(params);
+    };
+
+    // Spoof hardware concurrency
+    Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+
+    // Spoof WebGL vendor/renderer
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function (param: number) {
+      if (param === 37445) return "Intel Inc.";
+      if (param === 37446) return "Intel Iris OpenGL Engine";
+      return getParameter.call(this, param);
+    };
   });
 
   return ctx;
@@ -162,4 +209,72 @@ export async function hasCaptcha(page: Page): Promise<boolean> {
     src.includes("turnstile") ||
     src.includes("cf-challenge")
   );
+}
+
+// ─── Human-like behavior utilities ──────────────────────────────────────────
+
+/** Random delay between min and max ms */
+export function humanDelay(min = 500, max = 2000): Promise<void> {
+  const ms = min + Math.floor(Math.random() * (max - min));
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/** Move mouse to element with human-like curve before clicking */
+export async function humanClick(page: Page, selector: string): Promise<void> {
+  const el = page.locator(selector).first();
+  if (!await el.isVisible({ timeout: 3000 }).catch(() => false)) return;
+
+  const box = await el.boundingBox();
+  if (!box) return;
+
+  // Random offset within the element (don't always click dead center)
+  const x = box.x + box.width * (0.2 + Math.random() * 0.6);
+  const y = box.y + box.height * (0.2 + Math.random() * 0.6);
+
+  // Move mouse with steps (simulates human movement)
+  await page.mouse.move(x, y, { steps: 8 + Math.floor(Math.random() * 12) });
+  await humanDelay(50, 200);
+  await page.mouse.click(x, y);
+}
+
+/** Type text with variable speed like a human */
+export async function humanType(page: Page, selector: string, text: string): Promise<void> {
+  const el = page.locator(selector).first();
+  if (!await el.isVisible({ timeout: 3000 }).catch(() => false)) return;
+
+  await humanClick(page, selector);
+  await humanDelay(200, 500);
+
+  // Clear existing text
+  await el.fill("");
+  await humanDelay(100, 300);
+
+  // Type character by character with variable delay
+  for (const char of text) {
+    await page.keyboard.type(char, { delay: 30 + Math.floor(Math.random() * 80) });
+    // Occasional longer pause (thinking)
+    if (Math.random() < 0.05) await humanDelay(300, 800);
+  }
+}
+
+/** Scroll page like a human (not instant) */
+export async function humanScroll(page: Page, distance = 400): Promise<void> {
+  const steps = 3 + Math.floor(Math.random() * 5);
+  const stepDist = distance / steps;
+  for (let i = 0; i < steps; i++) {
+    await page.mouse.wheel(0, stepDist);
+    await humanDelay(50, 150);
+  }
+  await humanDelay(300, 800);
+}
+
+/** Random mouse movement to simulate reading/scanning */
+export async function humanScan(page: Page): Promise<void> {
+  const moves = 2 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < moves; i++) {
+    const x = 200 + Math.floor(Math.random() * 800);
+    const y = 100 + Math.floor(Math.random() * 600);
+    await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 10) });
+    await humanDelay(200, 600);
+  }
 }

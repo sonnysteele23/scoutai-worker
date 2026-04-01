@@ -11,7 +11,7 @@
 import { Page } from "playwright";
 import { ApplicationProfile, FilledField } from "../types";
 import { analyzeFormAndFill, answerCustomQuestion } from "./claude";
-import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume } from "./browser";
+import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume, humanDelay, humanScroll, humanScan, humanType } from "./browser";
 import * as fs from "fs";
 
 export interface GreenhouseResult {
@@ -39,7 +39,12 @@ export async function applyGreenhouse(
   try {
     console.log(`[greenhouse] Navigating to ${applyUrl}`);
     await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(2000);
+
+    // Human-like: wait for page to render, scan around, scroll
+    await humanDelay(2000, 4000);
+    await humanScan(page);
+    await humanScroll(page, 200);
+    await humanDelay(500, 1500);
 
     if (await hasCaptcha(page)) {
       return { success: false, questionsAnswered, failureReason: "CAPTCHA detected on page", failureCategory: "captcha" };
@@ -54,16 +59,20 @@ export async function applyGreenhouse(
     );
     console.log(`[greenhouse] Claude returned ${fields.length} fields to fill`);
 
-    // ── Step 2: Fill standard fields ─────────────────────────────────────
+    // ── Step 2: Fill standard fields (with human-like pacing) ─────────────
     for (const field of fields) {
       try {
         if (field.type === "file") continue; // handle separately
+        await humanDelay(300, 1200); // pause between fields like a real person
         await fillField(page, field);
         questionsAnswered.push({ question: field.label, answer: field.value });
       } catch (e) {
         console.warn(`[greenhouse] Could not fill "${field.label}": ${(e as Error).message}`);
       }
     }
+    // Scroll down after filling fields
+    await humanScroll(page, 300);
+    await humanDelay(500, 1500);
 
     // ── Step 3: Resume upload ─────────────────────────────────────────────
     await uploadResume(page, resumeBase64, resumeFileName);
@@ -71,8 +80,11 @@ export async function applyGreenhouse(
     // ── Step 4: Handle custom questions (if any remain unfilled) ─────────
     await handleCustomQuestions(page, profile, jobTitle, company, jobDescription, questionsAnswered);
 
-    // ── Step 5: Submit ────────────────────────────────────────────────────
+    // ── Step 5: Submit (with human-like pause before clicking) ─────────
     if (!dryRun) {
+      await humanDelay(1000, 3000); // pause like you're reviewing
+      await humanScroll(page, -100); // scroll up slightly to see submit
+      await humanDelay(500, 1000);
       const submitted = await submitForm(page);
       if (!submitted) {
         return { success: false, questionsAnswered, failureReason: "Could not locate submit button", failureCategory: "other" };

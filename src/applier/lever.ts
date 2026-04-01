@@ -13,7 +13,7 @@
 import { Page } from "playwright";
 import { ApplicationProfile, FilledField } from "../types";
 import { analyzeFormAndFill, answerCustomQuestion } from "./claude";
-import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume } from "./browser";
+import { getPageSnapshot, hasCaptcha, screenshot, writeTempResume, humanDelay, humanScroll, humanScan } from "./browser";
 import * as fs from "fs";
 
 export interface LeverResult {
