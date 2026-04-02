@@ -31,52 +31,41 @@ export async function detectCaptcha(page: Page): Promise<CaptchaInfo> {
   const info = await page.evaluate(() => {
     const html = document.documentElement.innerHTML;
 
+    // CHECK hCaptcha FIRST — Lever uses hCaptcha, and both hCaptcha and reCAPTCHA
+    // use [data-sitekey], so checking reCAPTCHA first causes misdetection.
+    const hasHcaptchaIframe = !!document.querySelector("iframe[src*='hcaptcha']");
+    const hasHcaptchaClass = !!document.querySelector(".h-captcha");
+    const hasHcaptchaInHtml = html.includes("hcaptcha");
+    if (hasHcaptchaIframe || hasHcaptchaClass || hasHcaptchaInHtml) {
+      const el = document.querySelector(".h-captcha[data-sitekey]") ||
+        document.querySelector(".h-captcha") ||
+        document.querySelector("[data-hcaptcha-widget-id]") ||
+        document.querySelector("[data-sitekey]");
+      const sitekey = el?.getAttribute("data-sitekey") ||
+        (html.match(/data-sitekey="([^"]+)"/) || [])[1] || "";
+      return { type: "hcaptcha" as const, sitekey };
+    }
+
     // reCAPTCHA v2
-    const recaptchaEl = document.querySelector("[data-sitekey]") ||
-      document.querySelector(".g-recaptcha") ||
-      document.querySelector("iframe[src*='recaptcha']");
-    if (recaptchaEl) {
-      const sitekey = recaptchaEl.getAttribute("data-sitekey") ||
+    const hasRecaptcha = !!document.querySelector(".g-recaptcha") ||
+      !!document.querySelector("iframe[src*='recaptcha']") ||
+      html.includes("g-recaptcha");
+    if (hasRecaptcha) {
+      const el = document.querySelector(".g-recaptcha[data-sitekey]") ||
+        document.querySelector("[data-sitekey]");
+      const sitekey = el?.getAttribute("data-sitekey") ||
         (html.match(/data-sitekey="([^"]+)"/) || [])[1] ||
         (html.match(/sitekey:\s*['"]([^'"]+)['"]/) || [])[1] || "";
       return { type: "recaptcha" as const, sitekey };
     }
 
-    // hCaptcha — check multiple selectors
-    const hcaptchaEl = document.querySelector(".h-captcha[data-sitekey]") ||
-      document.querySelector(".h-captcha") ||
-      document.querySelector("[data-hcaptcha-widget-id]") ||
-      document.querySelector("iframe[src*='hcaptcha']");
-    if (hcaptchaEl) {
-      const sitekey = hcaptchaEl.getAttribute("data-sitekey") ||
-        document.querySelector("[data-sitekey]")?.getAttribute("data-sitekey") ||
-        (html.match(/data-sitekey="([^"]+)"/) || [])[1] ||
-        (html.match(/sitekey['":\s]+['"]([^'"]{30,})['"]/) || [])[1] || "";
-      console.log("[captcha-detect] hCaptcha found, sitekey:", sitekey.substring(0, 20));
-      return { type: "hcaptcha" as const, sitekey };
-    }
-
     // Cloudflare Turnstile
-    const turnstileEl = document.querySelector(".cf-turnstile") ||
-      document.querySelector("iframe[src*='challenges.cloudflare']");
-    if (turnstileEl) {
-      const sitekey = turnstileEl.getAttribute("data-sitekey") ||
+    const hasTurnstile = !!document.querySelector(".cf-turnstile") ||
+      !!document.querySelector("iframe[src*='challenges.cloudflare']");
+    if (hasTurnstile) {
+      const sitekey = document.querySelector(".cf-turnstile")?.getAttribute("data-sitekey") ||
         (html.match(/data-sitekey="([^"]+)"/) || [])[1] || "";
       return { type: "turnstile" as const, sitekey };
-    }
-
-    // Check for generic CAPTCHA indicators
-    if (html.includes("recaptcha") || html.includes("g-recaptcha")) {
-      const sitekey = (html.match(/sitekey['":\s]+['"]([0-9a-zA-Z_-]{40})['"]/) || [])[1] || "";
-      return { type: "recaptcha" as const, sitekey };
-    }
-
-    if (html.includes("hcaptcha")) {
-      // hCaptcha sitekeys can be UUIDs or other formats
-      const sitekey = (html.match(/data-sitekey="([^"]+)"/) || [])[1] ||
-        (html.match(/sitekey['":\s]+['"]([^'"]{20,})['"]/) || [])[1] || "";
-      console.log("[captcha-detect] hCaptcha fallback, sitekey:", sitekey.substring(0, 20));
-      return { type: "hcaptcha" as const, sitekey };
     }
 
     return { type: null, sitekey: "" };
