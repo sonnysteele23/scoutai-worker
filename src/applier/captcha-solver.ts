@@ -31,44 +31,68 @@ export async function detectCaptcha(page: Page): Promise<CaptchaInfo> {
   const info = await page.evaluate(() => {
     const html = document.documentElement.innerHTML;
 
-    // CHECK hCaptcha FIRST — Lever uses hCaptcha, and both hCaptcha and reCAPTCHA
-    // use [data-sitekey], so checking reCAPTCHA first causes misdetection.
-    const hasHcaptchaIframe = !!document.querySelector("iframe[src*='hcaptcha']");
-    const hasHcaptchaClass = !!document.querySelector(".h-captcha");
-    const hasHcaptchaInHtml = html.includes("hcaptcha");
-    if (hasHcaptchaIframe || hasHcaptchaClass || hasHcaptchaInHtml) {
+    // ── Scan for ALL CAPTCHA types at once ──────────────────────────────
+    const signals = {
+      hcaptcha: {
+        iframe: !!document.querySelector("iframe[src*='hcaptcha']"),
+        element: !!document.querySelector(".h-captcha"),
+        widget: !!document.querySelector("[data-hcaptcha-widget-id]"),
+        inHtml: html.includes("hcaptcha.com") || html.includes("h-captcha"),
+      },
+      recaptcha: {
+        iframe: !!document.querySelector("iframe[src*='recaptcha']"),
+        element: !!document.querySelector(".g-recaptcha"),
+        inHtml: html.includes("google.com/recaptcha") || html.includes("g-recaptcha"),
+      },
+      turnstile: {
+        iframe: !!document.querySelector("iframe[src*='challenges.cloudflare']"),
+        element: !!document.querySelector(".cf-turnstile"),
+        inHtml: html.includes("challenges.cloudflare.com/turnstile"),
+      },
+    };
+
+    // Count signals for each type — strongest match wins
+    const scores = {
+      hcaptcha: +signals.hcaptcha.iframe * 3 + +signals.hcaptcha.element * 2 + +signals.hcaptcha.widget * 2 + +signals.hcaptcha.inHtml,
+      recaptcha: +signals.recaptcha.iframe * 3 + +signals.recaptcha.element * 2 + +signals.recaptcha.inHtml,
+      turnstile: +signals.turnstile.iframe * 3 + +signals.turnstile.element * 2 + +signals.turnstile.inHtml,
+    };
+
+    console.log("[captcha-detect] Signals:", JSON.stringify(signals));
+    console.log("[captcha-detect] Scores:", JSON.stringify(scores));
+
+    // Pick the type with the highest score
+    const best = Object.entries(scores)
+      .filter(([, score]) => score > 0)
+      .sort(([, a], [, b]) => b - a)[0];
+
+    if (!best) return { type: null, sitekey: "" };
+
+    const type = best[0] as "hcaptcha" | "recaptcha" | "turnstile";
+
+    // Extract sitekey based on detected type
+    let sitekey = "";
+    if (type === "hcaptcha") {
       const el = document.querySelector(".h-captcha[data-sitekey]") ||
         document.querySelector(".h-captcha") ||
-        document.querySelector("[data-hcaptcha-widget-id]") ||
-        document.querySelector("[data-sitekey]");
-      const sitekey = el?.getAttribute("data-sitekey") ||
+        document.querySelector("[data-hcaptcha-widget-id]");
+      sitekey = el?.getAttribute("data-sitekey") || "";
+    } else if (type === "recaptcha") {
+      const el = document.querySelector(".g-recaptcha[data-sitekey]");
+      sitekey = el?.getAttribute("data-sitekey") || "";
+    } else if (type === "turnstile") {
+      const el = document.querySelector(".cf-turnstile[data-sitekey]");
+      sitekey = el?.getAttribute("data-sitekey") || "";
+    }
+
+    // Fallback: grab any data-sitekey on the page
+    if (!sitekey) {
+      sitekey = document.querySelector("[data-sitekey]")?.getAttribute("data-sitekey") ||
         (html.match(/data-sitekey="([^"]+)"/) || [])[1] || "";
-      return { type: "hcaptcha" as const, sitekey };
     }
 
-    // reCAPTCHA v2
-    const hasRecaptcha = !!document.querySelector(".g-recaptcha") ||
-      !!document.querySelector("iframe[src*='recaptcha']") ||
-      html.includes("g-recaptcha");
-    if (hasRecaptcha) {
-      const el = document.querySelector(".g-recaptcha[data-sitekey]") ||
-        document.querySelector("[data-sitekey]");
-      const sitekey = el?.getAttribute("data-sitekey") ||
-        (html.match(/data-sitekey="([^"]+)"/) || [])[1] ||
-        (html.match(/sitekey:\s*['"]([^'"]+)['"]/) || [])[1] || "";
-      return { type: "recaptcha" as const, sitekey };
-    }
-
-    // Cloudflare Turnstile
-    const hasTurnstile = !!document.querySelector(".cf-turnstile") ||
-      !!document.querySelector("iframe[src*='challenges.cloudflare']");
-    if (hasTurnstile) {
-      const sitekey = document.querySelector(".cf-turnstile")?.getAttribute("data-sitekey") ||
-        (html.match(/data-sitekey="([^"]+)"/) || [])[1] || "";
-      return { type: "turnstile" as const, sitekey };
-    }
-
-    return { type: null, sitekey: "" };
+    console.log(`[captcha-detect] Winner: ${type} (score: ${best[1]}), sitekey: ${sitekey.substring(0, 20)}...`);
+    return { type, sitekey };
   });
 
   return { ...info, pageUrl } as CaptchaInfo;
