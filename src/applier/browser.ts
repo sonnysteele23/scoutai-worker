@@ -38,6 +38,8 @@ export async function getBrowser(): Promise<Browser> {
         "--disable-web-security",
         "--window-size=1280,900",
         "--lang=en-US,en",
+        "--ignore-certificate-errors",
+        "--ignore-certificate-errors-spki-list",
       ],
     });
     console.log(`[browser] Chromium launched (stealth mode${proxy ? " + proxy" : ""})`);
