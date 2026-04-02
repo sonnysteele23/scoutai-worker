@@ -254,12 +254,23 @@ export async function injectSolution(page: Page, info: CaptchaInfo, token: strin
  */
 export async function handleCaptcha(page: Page): Promise<boolean> {
   const info = await detectCaptcha(page);
-  if (!info.type) return false; // No CAPTCHA detected
+  if (!info.type) {
+    console.log("[captcha] handleCaptcha: no type detected");
+    return false;
+  }
 
-  console.log(`[captcha] Detected ${info.type} on ${info.pageUrl}`);
+  console.log(`[captcha] Detected ${info.type} on ${info.pageUrl} (sitekey: ${info.sitekey?.substring(0, 20) || "EMPTY"})`);
+
+  if (!info.sitekey) {
+    console.error(`[captcha] Sitekey is empty for ${info.type} — cannot solve`);
+    return false;
+  }
 
   const token = await solveCaptcha(info);
-  if (!token) return false;
+  if (!token) {
+    console.error("[captcha] solveCaptcha returned null — solve failed");
+    return false;
+  }
 
   const injected = await injectSolution(page, info, token);
   if (!injected) return false;

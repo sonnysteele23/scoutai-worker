@@ -71,11 +71,19 @@ export async function applyLever(
         console.log("[lever] Dismissed cookie consent");
         await page.waitForTimeout(500);
       }
-      // Force-remove any remaining dialog overlays
+      // Force-remove cookie dialog overlays ONLY (don't touch CAPTCHA elements)
       await page.evaluate(() => {
-        document.querySelectorAll("dialog[open], [role='dialog'], .cookieconsent, .cc-window").forEach(el => {
+        document.querySelectorAll("[aria-label='cookieconsent'], .cc-window, .cookieconsent").forEach(el => {
           if (el.tagName === "DIALOG") (el as HTMLDialogElement).close();
           (el as HTMLElement).remove();
+        });
+        // Close native <dialog> elements that look like cookie consent (not CAPTCHA)
+        document.querySelectorAll("dialog[open]").forEach(el => {
+          const text = el.textContent?.toLowerCase() || "";
+          if (text.includes("cookie") || text.includes("privacy notice") || text.includes("consent")) {
+            (el as HTMLDialogElement).close();
+            el.remove();
+          }
         });
       });
     } catch {}
