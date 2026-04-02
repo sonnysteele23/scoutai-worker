@@ -62,11 +62,33 @@ export async function applyLever(
     } catch {}
     await page.waitForTimeout(300);
 
+    // Diagnostic: log what the page looks like from the worker
+    const pageTitle = await page.title();
+    const pageText = await page.evaluate(() => document.body.innerText.substring(0, 500));
+    const pageUrl = page.url();
+    console.log(`[lever] Page loaded: "${pageTitle}" @ ${pageUrl}`);
+    console.log(`[lever] Page text preview: ${pageText.substring(0, 200)}`);
+
     if (await hasCaptcha(page)) {
+      // Log what CAPTCHA was detected
+      const captchaInfo = await page.evaluate(() => {
+        const html = document.documentElement.innerHTML;
+        return {
+          hasRecaptcha: !!document.querySelector(".g-recaptcha, iframe[src*='recaptcha']"),
+          hasTurnstile: !!document.querySelector(".cf-turnstile, iframe[src*='challenges.cloudflare']"),
+          hasHcaptcha: !!document.querySelector(".h-captcha, iframe[src*='hcaptcha']"),
+          hasChallengeForm: !!document.querySelector("#challenge-form, #cf-challenge-running"),
+          bodyText: document.body.innerText.substring(0, 300),
+          iframeCount: document.querySelectorAll("iframe").length,
+          iframeSrcs: Array.from(document.querySelectorAll("iframe")).map(f => (f as HTMLIFrameElement).src).slice(0, 5),
+        };
+      });
+      console.log("[lever] CAPTCHA details:", JSON.stringify(captchaInfo));
+
       console.log("[lever] CAPTCHA detected — attempting to solve...");
       const solved = await handleCaptcha(page);
       if (!solved) {
-        return { success: false, questionsAnswered, failureReason: "CAPTCHA detected — solver unavailable or failed", failureCategory: "captcha" };
+        return { success: false, questionsAnswered, failureReason: `CAPTCHA detected (${captchaInfo.hasRecaptcha ? 'reCAPTCHA' : captchaInfo.hasTurnstile ? 'Turnstile' : captchaInfo.hasHcaptcha ? 'hCaptcha' : 'unknown'}) — solver failed`, failureCategory: "captcha" };
       }
       console.log("[lever] CAPTCHA solved, continuing...");
       await humanDelay(1000, 2000);
