@@ -22,15 +22,26 @@ function requireSecret(req: Request, res: Response, next: NextFunction): void {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // Health check — Railway uses this
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
+  const key = process.env.TWOCAPTCHA_API_KEY?.trim() || "";
+  let balance = "unknown";
+  if (key) {
+    try {
+      const r = await fetch(`https://2captcha.com/res.php?key=${key}&action=getbalance&json=1`);
+      const d = await r.json() as Record<string, unknown>;
+      balance = d.status === 1 ? `$${d.request}` : String(d.request);
+    } catch {}
+  }
   res.json({
     status: "ok",
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     timestamp: new Date().toISOString(),
     captchaSolver: {
-      configured: !!process.env.TWOCAPTCHA_API_KEY,
-      keyPrefix: process.env.TWOCAPTCHA_API_KEY?.substring(0, 4) || "none",
+      configured: !!key,
+      keyLength: key.length,
+      keyPrefix: key.substring(0, 4) || "none",
+      balance,
     },
     webhookUrl: process.env.SCOUTAI_URL || "not set",
   });
