@@ -197,18 +197,35 @@ export async function screenshot(page: Page): Promise<string> {
 
 /**
  * Detect CAPTCHA on page.
+ * Only triggers on visible CAPTCHA elements or challenge pages — not just script includes.
  */
 export async function hasCaptcha(page: Page): Promise<boolean> {
-  const text = await page.evaluate(() => document.body.innerText.toLowerCase());
-  const src = await page.content();
-  return (
-    text.includes("prove you're human") ||
-    text.includes("i'm not a robot") ||
-    src.includes("recaptcha") ||
-    src.includes("hcaptcha") ||
-    src.includes("turnstile") ||
-    src.includes("cf-challenge")
-  );
+  return page.evaluate(() => {
+    const text = document.body.innerText.toLowerCase();
+
+    // Visible challenge text
+    if (text.includes("prove you're human") || text.includes("i'm not a robot")) return true;
+
+    // Cloudflare challenge page (full-page block, not just a script tag)
+    if (text.includes("checking your browser") || text.includes("verify you are human")) return true;
+
+    // Visible reCAPTCHA widget (not just a script loaded in background)
+    const recaptchaVisible = document.querySelector(".g-recaptcha, #g-recaptcha, iframe[src*='recaptcha/api2/anchor'], iframe[src*='recaptcha/api2/bframe']");
+    if (recaptchaVisible) return true;
+
+    // Visible hCaptcha widget
+    const hcaptchaVisible = document.querySelector(".h-captcha, iframe[src*='hcaptcha.com']");
+    if (hcaptchaVisible) return true;
+
+    // Cloudflare Turnstile widget (visible, not just script)
+    const turnstileVisible = document.querySelector(".cf-turnstile, iframe[src*='challenges.cloudflare.com']");
+    if (turnstileVisible) return true;
+
+    // Full-page Cloudflare challenge
+    if (document.querySelector("#challenge-form, #cf-challenge-running")) return true;
+
+    return false;
+  });
 }
 
 // ─── Human-like behavior utilities ──────────────────────────────────────────
