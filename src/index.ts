@@ -91,6 +91,36 @@ app.get("/status/:queueId", requireSecret, (req: Request, res: Response) => {
   });
 });
 
+// Diagnostic: visit a URL and report what the worker sees (CAPTCHA detection test)
+app.get("/diagnose", requireSecret, async (req: Request, res: Response) => {
+  const url = req.query.url as string;
+  if (!url) { res.status(400).json({ error: "url query param required" }); return; }
+
+  try {
+    const { getBrowser, createContext, hasCaptcha } = require("./applier/browser");
+    const { detectCaptcha } = require("./applier/captcha-solver");
+    const browser = await getBrowser();
+    const ctx = await createContext(browser);
+    const page = await ctx.newPage();
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.waitForTimeout(3000);
+
+    const title = await page.title();
+    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 500));
+    const captchaDetected = await hasCaptcha(page);
+    const captchaInfo = await detectCaptcha(page);
+    const iframes = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("iframe")).map(f => (f as HTMLIFrameElement).src).slice(0, 10)
+    );
+
+    await ctx.close();
+    res.json({ title, url: page.url(), captchaDetected, captchaInfo, iframes, bodyPreview: bodyText.substring(0, 300) });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // Queue overview (admin)
 app.get("/jobs", requireSecret, (_req, res) => {
   const all = getAllJobs().slice(0, 50).map(j => ({
