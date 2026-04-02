@@ -67,6 +67,7 @@ export async function createContext(browser: Browser): Promise<BrowserContext> {
     hasTouch: false,
     isMobile: false,
     javaScriptEnabled: true,
+    ignoreHTTPSErrors: true, // Required for residential proxy HTTPS interception
   });
 
   // Comprehensive anti-detection: mask automation signals
