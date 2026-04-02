@@ -228,14 +228,23 @@ async function handleCustomQuestions(
 }
 
 async function submitLever(page: Page): Promise<boolean> {
+  // Scroll to bottom first — submit button may be off-screen
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(500);
+
   const selectors = [
     "button[type='submit']",
     "input[type='submit']",
     "button:has-text('Submit Application')",
+    "button:has-text('Submit application')",
     "button:has-text('Submit')",
     "button:has-text('Apply')",
+    "button:has-text('Apply for this job')",
     ".btn-submit",
     "#btn-submit",
+    ".postings-btn-submit",
+    "[data-qa='btn-submit']",
+    "button.template-btn-submit",
   ];
   for (const sel of selectors) {
     const btn = page.locator(sel).first();
@@ -244,6 +253,13 @@ async function submitLever(page: Page): Promise<boolean> {
       console.log(`[lever] Submitted via ${sel}`);
       return true;
     }
+  }
+  // Last resort: find any button near the bottom with submit-like text
+  const fallback = page.locator("button, input[type='submit']").filter({ hasText: /submit|apply/i }).last();
+  if (await fallback.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await fallback.click();
+    console.log("[lever] Submitted via fallback text match");
+    return true;
   }
   return false;
 }
