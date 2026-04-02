@@ -44,6 +44,13 @@ export async function applyLever(
     await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(2000);
 
+    // Dismiss cookie consent if present (blocks clicks on Lever pages)
+    const cookieDismiss = page.locator("button:has-text('Dismiss'), button:has-text('Accept'), [aria-label='cookieconsent'] button").first();
+    if (await cookieDismiss.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await cookieDismiss.click().catch(() => {});
+      await page.waitForTimeout(500);
+    }
+
     if (await hasCaptcha(page)) {
       console.log("[lever] CAPTCHA detected — attempting to solve...");
       const solved = await handleCaptcha(page);
@@ -229,14 +236,16 @@ async function handleCustomQuestions(
 
 async function submitLever(page: Page): Promise<boolean> {
   // Scroll to bottom first — submit button may be off-screen
+  await page.keyboard.press("End");
+  await page.waitForTimeout(1000);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(500);
 
   const selectors = [
+    "button:has-text('Submit application')",
+    "button:has-text('Submit Application')",
     "button[type='submit']",
     "input[type='submit']",
-    "button:has-text('Submit Application')",
-    "button:has-text('Submit application')",
     "button:has-text('Submit')",
     "button:has-text('Apply')",
     "button:has-text('Apply for this job')",
@@ -248,18 +257,27 @@ async function submitLever(page: Page): Promise<boolean> {
   ];
   for (const sel of selectors) {
     const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-      await btn.click();
-      console.log(`[lever] Submitted via ${sel}`);
-      return true;
+    const exists = await btn.count().catch(() => 0);
+    if (exists > 0) {
+      await btn.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await btn.click();
+        console.log(`[lever] Submitted via ${sel}`);
+        return true;
+      }
     }
   }
   // Last resort: find any button near the bottom with submit-like text
   const fallback = page.locator("button, input[type='submit']").filter({ hasText: /submit|apply/i }).last();
-  if (await fallback.isVisible({ timeout: 1500 }).catch(() => false)) {
-    await fallback.click();
-    console.log("[lever] Submitted via fallback text match");
-    return true;
+  const fallbackExists = await fallback.count().catch(() => 0);
+  if (fallbackExists > 0) {
+    await fallback.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+    if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await fallback.click();
+      console.log("[lever] Submitted via fallback text match");
+      return true;
+    }
   }
   return false;
 }
