@@ -5,11 +5,30 @@ import * as os from "os";
 
 let _browser: Browser | null = null;
 
+// Parse proxy URL: http://user:pass@host:port or host:port
+function getProxyConfig(): { server: string; username?: string; password?: string } | undefined {
+  const proxy = process.env.PROXY_URL?.trim();
+  if (!proxy) return undefined;
+  try {
+    const url = new URL(proxy.startsWith("http") ? proxy : `http://${proxy}`);
+    return {
+      server: `${url.protocol}//${url.hostname}:${url.port}`,
+      username: url.username || undefined,
+      password: url.password || undefined,
+    };
+  } catch {
+    console.warn("[browser] Invalid PROXY_URL:", proxy);
+    return undefined;
+  }
+}
+
 export async function getBrowser(): Promise<Browser> {
   if (!_browser || !_browser.isConnected()) {
     const { chromium } = require("playwright");
+    const proxy = getProxyConfig();
     _browser = await chromium.launch({
       headless: process.env.PLAYWRIGHT_HEADLESS !== "false",
+      proxy: proxy ? { server: proxy.server, username: proxy.username, password: proxy.password } : undefined,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -21,7 +40,7 @@ export async function getBrowser(): Promise<Browser> {
         "--lang=en-US,en",
       ],
     });
-    console.log("[browser] Chromium launched (stealth mode)");
+    console.log(`[browser] Chromium launched (stealth mode${proxy ? " + proxy" : ""})`);
   }
   return _browser;
 }
