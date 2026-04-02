@@ -5,6 +5,8 @@ import { ApplyJobRequest, ApplyJobResult } from "../types";
 import { getBrowser, createContext, screenshot, hasCaptcha } from "./browser";
 import { applyGreenhouse } from "./greenhouse";
 import { applyLever } from "./lever";
+import { applyIndeed } from "./indeed";
+import { applyWorkday } from "./workday";
 import { generateCoverLetter, getTokensUsed, resetTokens } from "./claude";
 
 export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult> {
@@ -58,6 +60,38 @@ export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult
       result = {
         status: r.success ? "applied" : (r.failureCategory === "captcha" ? "captcha" : "failed"),
         method: "lever",
+        confirmationScreenshot: r.confirmationScreenshot,
+        questionsAnswered: r.questionsAnswered,
+        coverLetterText,
+        failureReason: r.failureReason,
+        failureCategory: r.failureCategory,
+      };
+    } else if (ats === "indeed") {
+      const r = await applyIndeed(
+        page, req.applyUrl, req.profile,
+        req.resumeBase64, req.resumeFileName,
+        coverLetterText, req.jobTitle, req.company,
+        req.jobDescription, req.dryRun
+      );
+      result = {
+        status: r.success ? "applied" : (r.failureCategory === "captcha" ? "captcha" : (r.failureCategory === "login_required" ? "unsupported" : "failed")),
+        method: "indeed",
+        confirmationScreenshot: r.confirmationScreenshot,
+        questionsAnswered: r.questionsAnswered,
+        coverLetterText,
+        failureReason: r.failureReason,
+        failureCategory: r.failureCategory === "login_required" ? "portal_unsupported" : r.failureCategory,
+      };
+    } else if (ats === "workday") {
+      const r = await applyWorkday(
+        page, req.applyUrl, req.profile,
+        req.resumeBase64, req.resumeFileName,
+        coverLetterText, req.jobTitle, req.company,
+        req.jobDescription, req.dryRun
+      );
+      result = {
+        status: r.success ? "applied" : (r.failureCategory === "captcha" ? "captcha" : "failed"),
+        method: "workday",
         confirmationScreenshot: r.confirmationScreenshot,
         questionsAnswered: r.questionsAnswered,
         coverLetterText,
