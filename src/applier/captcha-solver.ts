@@ -20,6 +20,7 @@ interface CaptchaInfo {
   type: "recaptcha" | "hcaptcha" | "turnstile" | null;
   sitekey: string;
   pageUrl: string;
+  rqdata?: string; // hCaptcha Enterprise rqdata token
 }
 
 /**
@@ -91,8 +92,16 @@ export async function detectCaptcha(page: Page): Promise<CaptchaInfo> {
         (html.match(/data-sitekey="([^"]+)"/) || [])[1] || "";
     }
 
-    console.log(`[captcha-detect] Winner: ${type} (score: ${best[1]}), sitekey: ${sitekey.substring(0, 20)}...`);
-    return { type, sitekey };
+    // Extract hCaptcha Enterprise rqdata if present
+    let rqdata = "";
+    if (type === "hcaptcha") {
+      const hcEl = document.querySelector(".h-captcha");
+      rqdata = hcEl?.getAttribute("data-rqdata") ||
+        (html.match(/data-rqdata="([^"]+)"/) || [])[1] || "";
+    }
+
+    console.log(`[captcha-detect] Winner: ${type} (score: ${best[1]}), sitekey: ${sitekey.substring(0, 20)}..., rqdata: ${rqdata ? "yes" : "no"}`);
+    return { type, sitekey, rqdata };
   });
 
   return { ...info, pageUrl } as CaptchaInfo;
@@ -126,6 +135,15 @@ export async function solveCaptcha(info: CaptchaInfo): Promise<string | null> {
       pageurl: info.pageUrl,
       json: "1",
     });
+
+    // For hCaptcha: try Enterprise mode with rqdata if available
+    if (info.type === "hcaptcha") {
+      submitParams.set("data", info.rqdata || "");
+      // Tell 2Captcha this might be Enterprise hCaptcha
+      if (info.rqdata) {
+        submitParams.set("enterprise", "1");
+      }
+    }
 
     const submitRes = await fetch(`${BASE}/in.php?${submitParams}`);
     const submitData = await submitRes.json() as { status: number; request: string };
