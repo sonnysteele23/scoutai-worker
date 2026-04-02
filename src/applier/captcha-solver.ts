@@ -42,12 +42,17 @@ export async function detectCaptcha(page: Page): Promise<CaptchaInfo> {
       return { type: "recaptcha" as const, sitekey };
     }
 
-    // hCaptcha
-    const hcaptchaEl = document.querySelector("[data-sitekey].h-captcha") ||
+    // hCaptcha — check multiple selectors
+    const hcaptchaEl = document.querySelector(".h-captcha[data-sitekey]") ||
+      document.querySelector(".h-captcha") ||
+      document.querySelector("[data-hcaptcha-widget-id]") ||
       document.querySelector("iframe[src*='hcaptcha']");
     if (hcaptchaEl) {
       const sitekey = hcaptchaEl.getAttribute("data-sitekey") ||
-        (html.match(/data-sitekey="([^"]+)"/) || [])[1] || "";
+        document.querySelector("[data-sitekey]")?.getAttribute("data-sitekey") ||
+        (html.match(/data-sitekey="([^"]+)"/) || [])[1] ||
+        (html.match(/sitekey['":\s]+['"]([^'"]{30,})['"]/) || [])[1] || "";
+      console.log("[captcha-detect] hCaptcha found, sitekey:", sitekey.substring(0, 20));
       return { type: "hcaptcha" as const, sitekey };
     }
 
@@ -67,7 +72,10 @@ export async function detectCaptcha(page: Page): Promise<CaptchaInfo> {
     }
 
     if (html.includes("hcaptcha")) {
-      const sitekey = (html.match(/sitekey['":\s]+['"]([0-9a-f-]{36})['"]/) || [])[1] || "";
+      // hCaptcha sitekeys can be UUIDs or other formats
+      const sitekey = (html.match(/data-sitekey="([^"]+)"/) || [])[1] ||
+        (html.match(/sitekey['":\s]+['"]([^'"]{20,})['"]/) || [])[1] || "";
+      console.log("[captcha-detect] hCaptcha fallback, sitekey:", sitekey.substring(0, 20));
       return { type: "hcaptcha" as const, sitekey };
     }
 
@@ -87,7 +95,7 @@ export async function solveCaptcha(info: CaptchaInfo): Promise<string | null> {
     return null;
   }
   if (!info.type || !info.sitekey) {
-    console.log("[captcha] Could not detect CAPTCHA type or sitekey");
+    console.log(`[captcha] Could not detect CAPTCHA type or sitekey — type: ${info.type}, sitekey: "${info.sitekey}", url: ${info.pageUrl}`);
     return null;
   }
 
