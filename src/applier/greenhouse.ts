@@ -234,24 +234,50 @@ async function handleCustomQuestions(
 }
 
 async function submitForm(page: Page): Promise<boolean> {
-  // Try common submit selectors
-  const selectors = [
-    "input[type='submit']",
-    "button[type='submit']",
-    "button:has-text('Submit Application')",
-    "button:has-text('Submit')",
-    "button:has-text('Apply')",
-    "[data-qa='btn-submit']",
-    "#submit_app",
-  ];
+  // Scroll to bottom and remove overlays
+  await page.keyboard.press("End");
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    window.scrollTo(0, document.body.scrollHeight);
+    // Remove cookie consent overlays
+    document.querySelectorAll("[role='dialog'], .cookieconsent, [aria-label='cookieconsent'], .cc-window").forEach(el => {
+      (el as HTMLElement).style.display = "none";
+    });
+  });
+  await page.waitForTimeout(500);
 
-  for (const sel of selectors) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-      await btn.click();
-      console.log(`[greenhouse] Clicked submit: ${sel}`);
-      return true;
+  // Primary: JS click (bypasses overlay issues)
+  const clicked = await page.evaluate(() => {
+    // Greenhouse uses input[type=submit] with value "Submit Application"
+    const submitInput = document.querySelector<HTMLInputElement>("input[type='submit']");
+    if (submitInput) { submitInput.click(); return submitInput.value || "input-submit"; }
+    const buttons = Array.from(document.querySelectorAll("button"));
+    for (const btn of buttons) {
+      const text = btn.textContent?.trim().toLowerCase() || "";
+      if (text.includes("submit application") || text.includes("submit")) {
+        btn.scrollIntoView({ block: "center" });
+        btn.click();
+        return text;
+      }
     }
+    const byId = document.querySelector<HTMLElement>("#submit_app");
+    if (byId) { byId.click(); return "submit_app"; }
+    return null;
+  });
+
+  if (clicked) {
+    console.log(`[greenhouse] Submitted via JS click: "${clicked}"`);
+    return true;
   }
+
+  // Fallback: Playwright locator with force
+  const btn = page.locator("input[type='submit'], button[type='submit']").first();
+  if (await btn.count() > 0) {
+    await btn.click({ force: true, timeout: 5000 }).catch(() => {});
+    console.log("[greenhouse] Submitted via force click");
+    return true;
+  }
+
+  console.error("[greenhouse] No submit button found");
   return false;
 }

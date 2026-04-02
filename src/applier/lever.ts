@@ -235,49 +235,63 @@ async function handleCustomQuestions(
 }
 
 async function submitLever(page: Page): Promise<boolean> {
-  // Scroll to bottom first — submit button may be off-screen
+  // Scroll to absolute bottom
   await page.keyboard.press("End");
-  await page.waitForTimeout(1000);
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(500);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(1000);
 
-  const selectors = [
-    "button:has-text('Submit application')",
-    "button:has-text('Submit Application')",
-    "button[type='submit']",
-    "input[type='submit']",
-    "button:has-text('Submit')",
-    "button:has-text('Apply')",
-    "button:has-text('Apply for this job')",
-    ".btn-submit",
-    "#btn-submit",
-    ".postings-btn-submit",
-    "[data-qa='btn-submit']",
-    "button.template-btn-submit",
-  ];
-  for (const sel of selectors) {
-    const btn = page.locator(sel).first();
-    const exists = await btn.count().catch(() => 0);
-    if (exists > 0) {
-      await btn.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(300);
-      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await btn.click();
-        console.log(`[lever] Submitted via ${sel}`);
-        return true;
+  // Remove any cookie consent dialogs that might overlay the submit button
+  await page.evaluate(() => {
+    document.querySelectorAll("[role='dialog'], .cookieconsent, [aria-label='cookieconsent'], .cc-window").forEach(el => {
+      (el as HTMLElement).style.display = "none";
+    });
+  });
+  await page.waitForTimeout(300);
+
+  // Primary: find submit button via JavaScript (most reliable)
+  const clicked = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button"));
+    for (const btn of buttons) {
+      const text = btn.textContent?.trim().toLowerCase() || "";
+      if (text.includes("submit application") || text.includes("submit your application")) {
+        btn.scrollIntoView({ block: "center" });
+        btn.click();
+        return text;
       }
     }
-  }
-  // Last resort: find any button near the bottom with submit-like text
-  const fallback = page.locator("button, input[type='submit']").filter({ hasText: /submit|apply/i }).last();
-  const fallbackExists = await fallback.count().catch(() => 0);
-  if (fallbackExists > 0) {
-    await fallback.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
-    if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await fallback.click();
-      console.log("[lever] Submitted via fallback text match");
-      return true;
+    // Fallback: any button with "submit" that isn't a cookie button
+    for (const btn of buttons) {
+      const text = btn.textContent?.trim().toLowerCase() || "";
+      if (text.includes("submit") && !text.includes("deny") && !text.includes("accept") && !text.includes("dismiss") && !text.includes("cookie")) {
+        btn.scrollIntoView({ block: "center" });
+        btn.click();
+        return text;
+      }
     }
+    // Fallback: input[type=submit]
+    const submitInput = document.querySelector<HTMLInputElement>("input[type='submit']");
+    if (submitInput) { submitInput.click(); return submitInput.value || "input-submit"; }
+    return null;
+  });
+
+  if (clicked) {
+    console.log(`[lever] Submitted via JS click: "${clicked}"`);
+    return true;
   }
+
+  // Last resort: Playwright locator with force click
+  const btn = page.locator("button").filter({ hasText: /submit/i }).last();
+  if (await btn.count() > 0) {
+    await btn.click({ force: true, timeout: 5000 }).catch(() => {});
+    console.log("[lever] Submitted via force click");
+    return true;
+  }
+
+  console.error("[lever] No submit button found — dumping buttons:");
+  const allButtons = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("button")).map(b => b.textContent?.trim().substring(0, 60))
+  );
+  console.error("[lever] Buttons on page:", JSON.stringify(allButtons));
   return false;
 }
