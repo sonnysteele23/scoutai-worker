@@ -96,29 +96,23 @@ export async function applyLever(
     console.log(`[lever] Page loaded: "${pageTitle}" @ ${pageUrl}`);
     console.log(`[lever] Page text preview: ${pageText.substring(0, 200)}`);
 
-    if (await hasCaptcha(page)) {
-      // Log what CAPTCHA was detected
-      const captchaInfo = await page.evaluate(() => {
-        const html = document.documentElement.innerHTML;
-        return {
-          hasRecaptcha: !!document.querySelector(".g-recaptcha, iframe[src*='recaptcha']"),
-          hasTurnstile: !!document.querySelector(".cf-turnstile, iframe[src*='challenges.cloudflare']"),
-          hasHcaptcha: !!document.querySelector(".h-captcha, iframe[src*='hcaptcha']"),
-          hasChallengeForm: !!document.querySelector("#challenge-form, #cf-challenge-running"),
-          bodyText: document.body.innerText.substring(0, 300),
-          iframeCount: document.querySelectorAll("iframe").length,
-          iframeSrcs: Array.from(document.querySelectorAll("iframe")).map(f => (f as HTMLIFrameElement).src).slice(0, 5),
-        };
-      });
-      console.log("[lever] CAPTCHA details:", JSON.stringify(captchaInfo));
+    // Check if this is a full-page CAPTCHA block (can't see the form at all)
+    const isFullPageBlock = await page.evaluate(() => {
+      const text = document.body.innerText.toLowerCase();
+      const hasForm = !!document.querySelector("input[type='text'], input[type='email'], textarea");
+      return !hasForm && (text.includes("verify") || text.includes("checking") || text.includes("captcha"));
+    });
 
-      console.log("[lever] CAPTCHA detected — attempting to solve...");
+    if (isFullPageBlock) {
+      console.log("[lever] Full-page CAPTCHA block — must solve before form is visible");
       const solved = await handleCaptcha(page);
       if (!solved) {
-        return { success: false, questionsAnswered, failureReason: `CAPTCHA detected (${captchaInfo.hasRecaptcha ? 'reCAPTCHA' : captchaInfo.hasTurnstile ? 'Turnstile' : captchaInfo.hasHcaptcha ? 'hCaptcha' : 'unknown'}) — solver failed`, failureCategory: "captcha" };
+        return { success: false, questionsAnswered, failureReason: "Full-page CAPTCHA block — solver failed", failureCategory: "captcha" };
       }
-      console.log("[lever] CAPTCHA solved, continuing...");
-      await humanDelay(1000, 2000);
+      await humanDelay(2000, 3000);
+    } else if (await hasCaptcha(page)) {
+      // Passive CAPTCHA (loaded but not blocking) — skip for now, handle after submit
+      console.log("[lever] Passive CAPTCHA detected — will handle after form fill if needed");
     }
 
     // ── Get form snapshot + AI analysis ──────────────────────────────────
@@ -159,6 +153,20 @@ export async function applyLever(
       const submitted = await submitLever(page);
       if (!submitted) return { success: false, questionsAnswered, failureReason: "No submit button found", failureCategory: "other" };
       await page.waitForTimeout(3000);
+
+      // Check if CAPTCHA appeared AFTER submit (common with passive hCaptcha)
+      if (await hasCaptcha(page)) {
+        console.log("[lever] Post-submit CAPTCHA detected — solving...");
+        const solved = await handleCaptcha(page);
+        if (solved) {
+          // Re-submit after CAPTCHA solve
+          await page.waitForTimeout(2000);
+          await submitLever(page);
+          await page.waitForTimeout(3000);
+        } else {
+          return { success: false, questionsAnswered, failureReason: "CAPTCHA appeared after submit — solver failed. Click 'Continue manually' to finish.", failureCategory: "captcha" };
+        }
+      }
     }
 
     const shot = await screenshot(page);
