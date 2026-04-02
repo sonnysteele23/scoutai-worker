@@ -156,7 +156,18 @@ export async function applyLever(
 
       // Check if CAPTCHA appeared AFTER submit (common with passive hCaptcha)
       if (await hasCaptcha(page)) {
-        console.log("[lever] Post-submit CAPTCHA detected — solving...");
+        console.log("[lever] Post-submit CAPTCHA detected — attempting solve...");
+
+        // Try clicking the hCaptcha checkbox to trigger the challenge
+        try {
+          const hcCheckbox = page.frameLocator("iframe[src*='hcaptcha']").locator("#checkbox");
+          if (await hcCheckbox.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await hcCheckbox.click();
+            console.log("[lever] Clicked hCaptcha checkbox");
+            await page.waitForTimeout(2000);
+          }
+        } catch {}
+
         const solved = await handleCaptcha(page);
         if (solved) {
           // Re-submit after CAPTCHA solve
@@ -164,8 +175,21 @@ export async function applyLever(
           await submitLever(page);
           await page.waitForTimeout(3000);
         } else {
-          return { success: false, questionsAnswered, failureReason: "CAPTCHA appeared after submit — solver failed. Click 'Continue manually' to finish.", failureCategory: "captcha" };
+          // Even if solver fails, check if submission went through anyway
+          const postText = await page.evaluate(() => document.body.innerText);
+          if (/thank you|application received|submitted|confirmation/i.test(postText)) {
+            console.log("[lever] Application submitted despite CAPTCHA solver failure!");
+            const shot = await screenshot(page);
+            return { success: true, questionsAnswered, confirmationScreenshot: shot };
+          }
+          return { success: false, questionsAnswered, failureReason: "CAPTCHA appeared after submit — form is pre-filled, click 'Continue manually' to finish", failureCategory: "captcha" };
         }
+      }
+
+      // Also check if it actually submitted without CAPTCHA
+      const postSubmitText = await page.evaluate(() => document.body.innerText);
+      if (/thank you|application received|submitted|confirmation|we.?ll be in touch/i.test(postSubmitText)) {
+        console.log("[lever] Application confirmed after submit!");
       }
     }
 
