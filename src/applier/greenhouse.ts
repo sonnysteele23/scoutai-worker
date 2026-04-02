@@ -41,6 +41,24 @@ export async function applyGreenhouse(
     console.log(`[greenhouse] Navigating to ${applyUrl}`);
     await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
+    // Wait for Cloudflare challenge to auto-resolve (if present)
+    const cfChallenge = await page.evaluate(() =>
+      document.body.innerText.toLowerCase().includes("checking your browser") ||
+      document.body.innerText.toLowerCase().includes("just a moment")
+    );
+    if (cfChallenge) {
+      console.log("[greenhouse] Cloudflare challenge detected — waiting for auto-resolve...");
+      for (let i = 0; i < 15; i++) {
+        await page.waitForTimeout(1000);
+        const still = await page.evaluate(() =>
+          document.body.innerText.toLowerCase().includes("checking your browser") ||
+          document.body.innerText.toLowerCase().includes("just a moment")
+        );
+        if (!still) { console.log(`[greenhouse] Cloudflare resolved after ${i + 1}s`); break; }
+      }
+      await page.waitForTimeout(2000);
+    }
+
     // Human-like: wait for page to render, scan around, scroll
     await humanDelay(2000, 4000);
     await humanScan(page);

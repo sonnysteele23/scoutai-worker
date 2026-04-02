@@ -44,6 +44,25 @@ export async function applyLever(
     await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(2000);
 
+    // Wait for Cloudflare challenge to auto-resolve (if present)
+    const cfChallenge = await page.evaluate(() =>
+      document.body.innerText.toLowerCase().includes("checking your browser") ||
+      document.body.innerText.toLowerCase().includes("just a moment")
+    );
+    if (cfChallenge) {
+      console.log("[lever] Cloudflare challenge detected — waiting for auto-resolve...");
+      // Wait up to 15 seconds for the challenge to pass
+      for (let i = 0; i < 15; i++) {
+        await page.waitForTimeout(1000);
+        const still = await page.evaluate(() =>
+          document.body.innerText.toLowerCase().includes("checking your browser") ||
+          document.body.innerText.toLowerCase().includes("just a moment")
+        );
+        if (!still) { console.log(`[lever] Cloudflare resolved after ${i + 1}s`); break; }
+      }
+      await page.waitForTimeout(2000);
+    }
+
     // Dismiss cookie consent dialog (blocks ALL interaction on Lever pages)
     try {
       const acceptBtn = page.locator("dialog button:has-text('Accept'), dialog button:has-text('Dismiss'), [aria-label='cookieconsent'] button:has-text('Accept')").first();
