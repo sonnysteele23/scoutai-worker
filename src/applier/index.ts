@@ -7,6 +7,7 @@ import { applyGreenhouse } from "./greenhouse";
 import { applyLever } from "./lever";
 import { applyIndeed } from "./indeed";
 import { applyWorkday } from "./workday";
+import { applyAshby } from "./ashby";
 import { generateCoverLetter, getTokensUsed, resetTokens } from "./claude";
 
 export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult> {
@@ -98,6 +99,22 @@ export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult
         failureReason: r.failureReason,
         failureCategory: r.failureCategory,
       };
+    } else if (ats === "ashby") {
+      const r = await applyAshby(
+        page, req.applyUrl, req.profile,
+        req.resumeBase64, req.resumeFileName,
+        coverLetterText, req.jobTitle, req.company,
+        req.jobDescription, req.dryRun
+      );
+      result = {
+        status: r.success ? "applied" : (r.failureCategory === "captcha" ? "captcha" : "failed"),
+        method: "ashby",
+        confirmationScreenshot: r.confirmationScreenshot,
+        questionsAnswered: r.questionsAnswered,
+        coverLetterText,
+        failureReason: r.failureReason,
+        failureCategory: r.failureCategory,
+      };
     } else {
       // Unsupported ATS — take screenshot so user can see why
       await page.goto(req.applyUrl, { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
@@ -141,6 +158,7 @@ function detectAts(url: string): string {
   const u = url.toLowerCase();
   if (u.includes("greenhouse.io")) return "greenhouse";
   if (u.includes("lever.co")) return "lever";
+  if (u.includes("ashbyhq.com")) return "ashby";
   if (u.includes("myworkdayjobs.com") || u.includes("myworkdaysite.com")) return "workday";
   if (u.includes("indeed.com")) return "indeed";
   if (u.includes("linkedin.com")) return "linkedin";
