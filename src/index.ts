@@ -28,6 +28,11 @@ app.get("/health", (_req, res) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     timestamp: new Date().toISOString(),
+    captchaSolver: {
+      configured: !!process.env.TWOCAPTCHA_API_KEY,
+      keyPrefix: process.env.TWOCAPTCHA_API_KEY?.substring(0, 4) || "none",
+    },
+    webhookUrl: process.env.SCOUTAI_URL || "not set",
   });
 });
 
