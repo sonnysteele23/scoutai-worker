@@ -44,12 +44,23 @@ export async function applyLever(
     await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Dismiss cookie consent if present (blocks clicks on Lever pages)
-    const cookieDismiss = page.locator("button:has-text('Dismiss'), button:has-text('Accept'), [aria-label='cookieconsent'] button").first();
-    if (await cookieDismiss.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await cookieDismiss.click().catch(() => {});
-      await page.waitForTimeout(500);
-    }
+    // Dismiss cookie consent dialog (blocks ALL interaction on Lever pages)
+    try {
+      const acceptBtn = page.locator("dialog button:has-text('Accept'), dialog button:has-text('Dismiss'), [aria-label='cookieconsent'] button:has-text('Accept')").first();
+      if (await acceptBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await acceptBtn.click();
+        console.log("[lever] Dismissed cookie consent");
+        await page.waitForTimeout(500);
+      }
+      // Force-remove any remaining dialog overlays
+      await page.evaluate(() => {
+        document.querySelectorAll("dialog[open], [role='dialog'], .cookieconsent, .cc-window").forEach(el => {
+          if (el.tagName === "DIALOG") (el as HTMLDialogElement).close();
+          (el as HTMLElement).remove();
+        });
+      });
+    } catch {}
+    await page.waitForTimeout(300);
 
     if (await hasCaptcha(page)) {
       console.log("[lever] CAPTCHA detected — attempting to solve...");
