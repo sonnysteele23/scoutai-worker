@@ -228,17 +228,55 @@ export async function injectSolution(page: Page, info: CaptchaInfo, token: strin
 
     if (info.type === "hcaptcha") {
       await page.evaluate((t) => {
-        const textarea = document.querySelector("[name='h-captcha-response']") ||
-          document.querySelector("textarea[name*='hcaptcha']");
-        if (textarea) (textarea as HTMLTextAreaElement).value = t;
-        // Try to call hcaptcha callback
-        if ((window as unknown as Record<string, { getResponse?: () => string }>).hcaptcha) {
+        // Fill all hCaptcha response textareas
+        const textareas = document.querySelectorAll("[name='h-captcha-response'], textarea[name*='hcaptcha']");
+        textareas.forEach((ta) => { (ta as HTMLTextAreaElement).value = t; });
+
+        // Also fill any g-recaptcha-response (some hCaptcha implementations use this)
+        const gTextarea = document.querySelector("[name='g-recaptcha-response']");
+        if (gTextarea) (gTextarea as HTMLTextAreaElement).value = t;
+
+        const w = window as unknown as Record<string, unknown>;
+
+        // Method 1: Call hcaptcha.getRespKey callback directly
+        if (w.hcaptcha && typeof (w.hcaptcha as Record<string, unknown>).getResponse === "function") {
           try {
-            document.querySelector("iframe[src*='hcaptcha']")?.dispatchEvent(new Event("load"));
+            // Override getResponse to return our token
+            (w.hcaptcha as Record<string, unknown>).getResponse = () => t;
           } catch {}
         }
+
+        // Method 2: Find and invoke the onVerify callback from hCaptcha's internal state
+        // hCaptcha stores callbacks in a global registry keyed by widget ID
+        const hcaptchaFrame = document.querySelector("iframe[src*='hcaptcha']");
+        if (hcaptchaFrame) {
+          const widgetId = hcaptchaFrame.getAttribute("data-hcaptcha-widget-id") || "0";
+          try {
+            // hCaptcha stores callbacks indexed by widget ID
+            const hc = w.hcaptcha as Record<string, CallableFunction>;
+            if (hc && typeof hc.execute === "function") {
+              // Trigger execution callback with our token
+              hc.execute(widgetId, { async: false });
+            }
+          } catch {}
+        }
+
+        // Method 3: Find the form's onsubmit or the hCaptcha container's data-callback
+        const hcDiv = document.querySelector("[data-callback]");
+        if (hcDiv) {
+          const callbackName = hcDiv.getAttribute("data-callback");
+          if (callbackName && typeof (w as Record<string, CallableFunction>)[callbackName] === "function") {
+            try { (w as Record<string, CallableFunction>)[callbackName](t); } catch {}
+          }
+        }
+
+        // Method 4: Dispatch events to signal completion
+        const container = document.querySelector(".h-captcha, [data-hcaptcha-widget-id]");
+        if (container) {
+          container.dispatchEvent(new CustomEvent("verified", { detail: { token: t } }));
+        }
       }, token);
-      console.log("[captcha] hCaptcha solution injected");
+      console.log("[captcha] hCaptcha solution injected (4 methods attempted)");
       return true;
     }
 

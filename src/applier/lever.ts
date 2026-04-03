@@ -170,8 +170,18 @@ export async function applyLever(
 
         const solved = await handleCaptcha(page);
         if (solved) {
-          // Re-submit after CAPTCHA solve
-          await page.waitForTimeout(2000);
+          // Wait for hCaptcha callback to process, then re-submit
+          await page.waitForTimeout(3000);
+
+          // Check if CAPTCHA auto-submitted the form (some implementations do this)
+          const autoSubmitted = await page.evaluate(() => /thank you|application received|submitted|confirmation/i.test(document.body.innerText));
+          if (autoSubmitted) {
+            console.log("[lever] CAPTCHA callback auto-submitted the form!");
+            const shot = await screenshot(page);
+            return { success: true, questionsAnswered, confirmationScreenshot: shot };
+          }
+
+          // Otherwise manually re-submit
           await submitLever(page);
           await page.waitForTimeout(3000);
         } else {
