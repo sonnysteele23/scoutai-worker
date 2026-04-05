@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ApplicationProfile, FilledField } from "../types";
+import { answerFromProfile, getCachedAnswer, cacheAnswer } from "./qa-cache";
 
 let _client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -85,8 +86,32 @@ export async function answerCustomQuestion(
   profile: ApplicationProfile,
   jobTitle: string,
   company: string,
-  jobDescription: string
+  jobDescription: string,
+  userId?: string
 ): Promise<string> {
+  // Step 1: Try answering from profile data (free, instant)
+  const profileAnswer = answerFromProfile(
+    question,
+    profile as unknown as Record<string, string>,
+    (profile as unknown as Record<string, unknown>).resumeCompanies as string[] | undefined
+  );
+  if (profileAnswer) {
+    console.log(`[qa-cache] Profile answer for "${question.slice(0, 50)}": ${profileAnswer}`);
+    if (userId) cacheAnswer(userId, question, profileAnswer);
+    return profileAnswer;
+  }
+
+  // Step 2: Check Q&A cache for a previously answered similar question
+  if (userId) {
+    const cached = getCachedAnswer(userId, question);
+    if (cached) {
+      console.log(`[qa-cache] Cache hit for "${question.slice(0, 50)}": ${cached.slice(0, 50)}`);
+      return cached;
+    }
+  }
+
+  // Step 3: Call Claude for truly new questions
+  console.log(`[qa-cache] Cache miss — calling Claude for "${question.slice(0, 50)}"`);
   const response = await getClient().messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 600,
@@ -110,7 +135,12 @@ Sound human, not AI-generated. Be specific but brief. Return ONLY the answer tex
   });
 
   totalTokens += (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
-  return response.content[0].type === "text" ? response.content[0].text.trim() : "";
+  const answer = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+
+  // Cache for future reuse
+  if (userId && answer) cacheAnswer(userId, question, answer);
+
+  return answer;
 }
 
 /**
