@@ -8,11 +8,23 @@ app.use(express.json({ limit: "25mb" })); // large — resume base64 can be ~5MB
 
 const PORT = parseInt(process.env.PORT || "3001");
 
+// Fail fast at startup if the secret is missing. Previously requireSecret
+// only enforced the check when `secret` was truthy — which meant an unset
+// or empty WORKER_SECRET silently fell through to "anyone can submit jobs".
+// We'd rather Railway crash-loop on a misconfigured deploy than ship an
+// open Playwright endpoint. The empty-secret case (set to "") is also a
+// misconfig — production should always have a real value.
+const WORKER_SECRET = process.env.WORKER_SECRET;
+if (!WORKER_SECRET || WORKER_SECRET.length < 16) {
+  // eslint-disable-next-line no-console
+  console.error("[boot] WORKER_SECRET must be set to a value of at least 16 chars. Refusing to start.");
+  process.exit(1);
+}
+
 // ── Auth middleware ───────────────────────────────────────────────────────────
 function requireSecret(req: Request, res: Response, next: NextFunction): void {
-  const secret = process.env.WORKER_SECRET;
   const provided = req.headers["x-worker-secret"] || req.headers.authorization?.replace("Bearer ", "");
-  if (secret && provided !== secret) {
+  if (provided !== WORKER_SECRET) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
