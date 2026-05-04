@@ -126,10 +126,36 @@ app.get("/status/:queueId", requireSecret, (req: Request, res: Response) => {
   });
 });
 
+// AUDIT-L02: hostname allowlist for /diagnose. Even with the worker
+// secret in place, an admin / compromised key shouldn't be able to point
+// the headless browser at arbitrary internal IPs. We allow only public
+// ATS / job-board hosts that the apply flow already touches.
+const DIAGNOSE_ALLOWED_HOSTS = [
+  "linkedin.com", "scoutai.site",
+  "boards.greenhouse.io", "job-boards.greenhouse.io",
+  "jobs.lever.co", "jobs.ashbyhq.com",
+  "myworkdayjobs.com", "indeed.com",
+  "smartrecruiters.com", "icims.com", "bamboohr.com",
+  "apply.workable.com", "jobvite.com", "recruitee.com",
+  "jazzhr.com", "breezy.hr", "pinterestcareers.com",
+];
+function isDiagnoseHostAllowed(rawUrl: string): boolean {
+  let host: string;
+  try { host = new URL(rawUrl).hostname.toLowerCase(); }
+  catch { return false; }
+  return DIAGNOSE_ALLOWED_HOSTS.some(
+    (h) => host === h || host.endsWith(`.${h}`),
+  );
+}
+
 // Diagnostic: visit a URL and report what the worker sees (CAPTCHA detection test)
 app.get("/diagnose", requireSecret, async (req: Request, res: Response) => {
   const url = req.query.url as string;
   if (!url) { res.status(400).json({ error: "url query param required" }); return; }
+  if (!isDiagnoseHostAllowed(url)) {
+    res.status(400).json({ error: "URL host not in /diagnose allowlist" });
+    return;
+  }
 
   try {
     const { getBrowser, createContext, hasCaptcha } = require("./applier/browser");
