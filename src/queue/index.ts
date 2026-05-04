@@ -9,7 +9,11 @@ import { ApplyJobRequest, ApplyJobResult, QueuedJob } from "../types";
 import { executeApply } from "../applier";
 
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_BROWSERS || "1");
-const JOB_TIMEOUT_MS = parseInt(process.env.JOB_TIMEOUT_MS || "120000");
+// Real Greenhouse / Workday applies routinely take 4–6 minutes:
+// ~30s nav, 15s Cloudflare check, multi-step Claude question answering,
+// human-paced delays between fields, and the file upload itself. The old
+// 120s default produced false "failed" reports on successful submissions.
+const JOB_TIMEOUT_MS = parseInt(process.env.JOB_TIMEOUT_MS || "360000");
 
 const jobs = new Map<string, QueuedJob>();
 let running = 0;
