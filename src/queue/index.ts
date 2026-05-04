@@ -107,17 +107,31 @@ async function notifyScoutAI(result: ApplyJobResult): Promise<void> {
   const webhookUrl = `${process.env.SCOUTAI_URL}/api/auto-apply/webhook`;
   const secret = process.env.SCOUTAI_WEBHOOK_SECRET || "";
 
-  try {
-    await axios.post(webhookUrl, result, {
-      headers: {
-        "Content-Type": "application/json",
-        "x-webhook-secret": secret,
-      },
-      timeout: 10000,
-    });
-    console.log(`[queue] Webhook sent for job ${result.autoApplyJobId}`);
-  } catch (err) {
-    console.error("[queue] Webhook failed:", (err as Error).message);
-    // Non-fatal — ScoutAI can poll /status instead
+  // Retry-with-backoff: 3 attempts at 0/2s/8s. A single transient outage
+  // on the SaaS side used to leave the AutoApplyJob row stuck in
+  // "generating" forever. Combined with the SaaS-side stuck-jobs
+  // reconciler this closes the visibility gap for users.
+  const delays = [0, 2000, 8000];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt] > 0) await new Promise((r) => setTimeout(r, delays[attempt]));
+    try {
+      await axios.post(webhookUrl, result, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-webhook-secret": secret,
+        },
+        timeout: 10000,
+      });
+      console.log(`[queue] Webhook sent for job ${result.autoApplyJobId}${attempt ? ` (attempt ${attempt + 1})` : ""}`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.error(`[queue] Webhook attempt ${attempt + 1}/${delays.length} failed:`, (err as Error).message);
+    }
   }
+  // All retries exhausted — non-fatal at the worker level, but the SaaS
+  // reconciler must catch this. Log loudly so the Railway log scraper
+  // surfaces it.
+  console.error(`[queue] Webhook permanently failed for job ${result.autoApplyJobId}:`, (lastErr as Error)?.message);
 }

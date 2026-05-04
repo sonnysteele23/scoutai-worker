@@ -1,7 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import { enqueue, getJob, getAllJobs } from "./queue";
 import { ApplyJobRequest } from "./types";
-import { closeBrowser } from "./applier/browser";
 
 const app = express();
 app.use(express.json({ limit: "25mb" })); // large — resume base64 can be ~5MB
@@ -151,6 +150,7 @@ app.get("/diagnose", requireSecret, async (req: Request, res: Response) => {
     );
 
     await ctx.close();
+    await browser.close().catch(() => {});
     res.json({ title, url: page.url(), captchaDetected, captchaInfo, iframes, bodyPreview: bodyText.substring(0, 300) });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -172,16 +172,14 @@ app.get("/jobs", requireSecret, (_req, res) => {
   res.json({ count: all.length, jobs: all });
 });
 
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  console.log("[server] SIGTERM received — closing browser and exiting");
-  await closeBrowser();
+// Graceful shutdown — per-job browser launch (AUDIT-H12) means there's
+// no module-level browser to close at shutdown. In-flight jobs handle
+// their own cleanup via the `finally` block in applier/index.ts.
+process.on("SIGTERM", () => {
+  console.log("[server] SIGTERM received — exiting");
   process.exit(0);
 });
-process.on("SIGINT", async () => {
-  await closeBrowser();
-  process.exit(0);
-});
+process.on("SIGINT", () => process.exit(0));
 
 // Global error handlers — ensure crashes are logged
 process.on("uncaughtException", (err) => { console.error("[CRASH] Uncaught exception:", err); process.exit(1); });

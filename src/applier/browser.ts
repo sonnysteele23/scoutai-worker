@@ -3,8 +3,6 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-let _browser: Browser | null = null;
-
 // Parse proxy URL: http://user:pass@host:port or host:port
 function getProxyConfig(): { server: string; username?: string; password?: string } | undefined {
   const proxy = process.env.PROXY_URL?.trim();
@@ -22,33 +20,42 @@ function getProxyConfig(): { server: string; username?: string; password?: strin
   }
 }
 
+/**
+ * Launch a fresh Chromium for this job. The previous module-level
+ * singleton (`_browser`) leaked cookies/storage/cache between users —
+ * if MAX_CONCURRENT_BROWSERS ever went above 1, two users' applies
+ * could share the same context. Per-job launch costs ~500ms but
+ * isolates state cleanly.
+ *
+ * Caller is responsible for `closeBrowser(browser)` when finished
+ * (`finally` block). The job timeout in queue/index.ts ensures even
+ * a hung apply eventually frees the process slot.
+ */
 export async function getBrowser(): Promise<Browser> {
-  if (!_browser || !_browser.isConnected()) {
-    const { chromium } = require("playwright");
-    const proxy = getProxyConfig();
-    _browser = await chromium.launch({
-      headless: process.env.PLAYWRIGHT_HEADLESS !== "false",
-      proxy: proxy ? { server: proxy.server, username: proxy.username, password: proxy.password } : undefined,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--disable-web-security",
-        "--window-size=1280,900",
-        "--lang=en-US,en",
-        "--ignore-certificate-errors",
-        "--ignore-certificate-errors-spki-list",
-      ],
-    });
-    console.log(`[browser] Chromium launched (stealth mode${proxy ? " + proxy" : ""})`);
-  }
-  return _browser;
+  const { chromium } = require("playwright");
+  const proxy = getProxyConfig();
+  const browser = await chromium.launch({
+    headless: process.env.PLAYWRIGHT_HEADLESS !== "false",
+    proxy: proxy ? { server: proxy.server, username: proxy.username, password: proxy.password } : undefined,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--disable-web-security",
+      "--window-size=1280,900",
+      "--lang=en-US,en",
+      "--ignore-certificate-errors",
+      "--ignore-certificate-errors-spki-list",
+    ],
+  });
+  console.log(`[browser] Chromium launched (stealth mode${proxy ? " + proxy" : ""})`);
+  return browser;
 }
 
-export async function closeBrowser(): Promise<void> {
-  if (_browser) { await _browser.close(); _browser = null; }
+export async function closeBrowser(browser?: Browser | null): Promise<void> {
+  if (browser) await browser.close().catch(() => {});
 }
 
 /**

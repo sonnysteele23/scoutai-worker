@@ -2,7 +2,7 @@
  * Main apply orchestrator — dispatches to the right ATS handler
  */
 import { ApplyJobRequest, ApplyJobResult } from "../types";
-import { getBrowser, createContext, screenshot, hasCaptcha } from "./browser";
+import { getBrowser, closeBrowser, createContext, screenshot, hasCaptcha } from "./browser";
 import { applyGreenhouse } from "./greenhouse";
 import { applyLever } from "./lever";
 import { applyIndeed } from "./indeed";
@@ -151,6 +151,9 @@ export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult
     };
   } finally {
     await ctx.close().catch(() => {});
+    // Per-job browser launch (AUDIT-H12): close it here so cookies /
+    // storage state can't leak into the next user's apply.
+    await closeBrowser(browser);
   }
 }
 
