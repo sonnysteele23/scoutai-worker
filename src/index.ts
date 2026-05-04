@@ -21,10 +21,23 @@ if (!WORKER_SECRET || WORKER_SECRET.length < 16) {
   process.exit(1);
 }
 
+import * as crypto from "crypto";
+
+function constantTimeEq(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const len = Math.max(a.length, b.length);
+  const pa = Buffer.alloc(len);
+  const pb = Buffer.alloc(len);
+  pa.write(a);
+  pb.write(b);
+  return a.length === b.length && crypto.timingSafeEqual(pa, pb);
+}
+
 // ── Auth middleware ───────────────────────────────────────────────────────────
 function requireSecret(req: Request, res: Response, next: NextFunction): void {
-  const provided = req.headers["x-worker-secret"] || req.headers.authorization?.replace("Bearer ", "");
-  if (provided !== WORKER_SECRET) {
+  const raw = req.headers["x-worker-secret"] || req.headers.authorization?.replace("Bearer ", "");
+  const provided = Array.isArray(raw) ? raw[0] : (raw as string | undefined) || "";
+  if (!constantTimeEq(provided, WORKER_SECRET)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
