@@ -293,7 +293,13 @@ async function submitForm(page: Page): Promise<boolean> {
   await page.keyboard.press("End");
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    window.scrollTo(0, document.body.scrollHeight);
+    // Null-guard: under waitUntil:"commit" + post-fill state, document.body
+    // can briefly be null. scrollTo to documentElement.scrollHeight as a
+    // fallback gives the same effect; without the guard the whole submit
+    // step throws and the apply is reported as "failed" even though the
+    // form is already filled.
+    const h = document.body?.scrollHeight ?? document.documentElement?.scrollHeight ?? 0;
+    window.scrollTo(0, h);
     // Remove cookie consent overlays
     document.querySelectorAll("[role='dialog'], .cookieconsent, [aria-label='cookieconsent'], .cc-window").forEach(el => {
       (el as HTMLElement).style.display = "none";
