@@ -65,24 +65,43 @@ export async function applyGreenhouse(
         return t.includes("checking your browser") || t.includes("just a moment");
       } catch { return false; }
     };
-    const cfChallenge = await page.evaluate(readCfText);
+    // Step-level diagnostic logging — Webflow's Greenhouse page hangs
+    // somewhere in this pre-snapshot section under Playwright headless,
+    // and "Job timeout exceeded" with no further log makes triage
+    // impossible. Logs let the next failure pinpoint the exact step.
+    // Plus wrap each page.evaluate / page action in Promise.race against
+    // a 15s outer timer so any single stalled step bails fast.
+    const stepTimeout = <T>(p: Promise<T>, label: string, ms = 15000): Promise<T> =>
+      Promise.race([p, new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`[greenhouse] step "${label}" exceeded ${ms}ms`)), ms)
+      )]);
+
+    console.log(`[greenhouse] step: cf-check`);
+    const cfChallenge = await stepTimeout(page.evaluate(readCfText), "cf-check");
     if (cfChallenge) {
       console.log("[greenhouse] Cloudflare challenge detected — waiting for auto-resolve...");
       for (let i = 0; i < 15; i++) {
         await page.waitForTimeout(1000);
-        const still = await page.evaluate(readCfText);
+        const still = await stepTimeout(page.evaluate(readCfText), `cf-poll-${i}`);
         if (!still) { console.log(`[greenhouse] Cloudflare resolved after ${i + 1}s`); break; }
       }
       await page.waitForTimeout(2000);
     }
 
     // Human-like: wait for page to render, scan around, scroll
+    console.log(`[greenhouse] step: humanDelay-1`);
     await humanDelay(2000, 4000);
-    await humanScan(page);
-    await humanScroll(page, 200);
+    console.log(`[greenhouse] step: humanScan`);
+    await stepTimeout(humanScan(page), "humanScan", 30000);
+    console.log(`[greenhouse] step: humanScroll`);
+    await stepTimeout(humanScroll(page, 200), "humanScroll", 30000);
+    console.log(`[greenhouse] step: humanDelay-2`);
     await humanDelay(500, 1500);
+    console.log(`[greenhouse] step: pre-captcha`);
 
-    if (await hasCaptcha(page)) {
+    const captchaPresent = await stepTimeout(hasCaptcha(page), "hasCaptcha", 15000);
+    console.log(`[greenhouse] step: captcha-present=${captchaPresent}`);
+    if (captchaPresent) {
       console.log("[greenhouse] CAPTCHA detected — attempting to solve...");
       const solved = await handleCaptcha(page);
       if (!solved) {
@@ -91,6 +110,7 @@ export async function applyGreenhouse(
       console.log("[greenhouse] CAPTCHA solved, continuing...");
       await humanDelay(1000, 2000);
     }
+    console.log(`[greenhouse] step: pre-snapshot`);
 
     // ── Step 1: Get AI analysis of form ──────────────────────────────────
     const snapshot = await getPageSnapshot(page);
