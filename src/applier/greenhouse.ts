@@ -39,12 +39,20 @@ export async function applyGreenhouse(
 
   try {
     console.log(`[greenhouse] Navigating to ${applyUrl}`);
-    // 60s timeout: Webflow + a few other Greenhouse customers ship heavy
-    // sync analytics that delay DOMContentLoaded past the 30s default
-    // (Webflow auto-apply failed exactly this way 2026-05-11). Real
-    // network is sub-second, so 60s is purely safety margin — the page
-    // either loads in <10s or it's genuinely broken.
-    await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // Use waitUntil:"commit" — returns when the navigation response is
+    // received, before the page parses or DOMContentLoaded fires. A
+    // fraction of Greenhouse customers (verified on Webflow 2026-05-11)
+    // ship a script payload that never fires DOMContentLoaded under
+    // Playwright headless, so the prior "domcontentloaded" wait timed
+    // out at both 30s and 60s even though the page loaded fine in real
+    // Chrome. The Cloudflare-challenge poll + humanDelay/humanScan
+    // sequence below gives the page plenty of time to render before we
+    // touch the form, so dropping the goto-side wait doesn't cost
+    // anything for normal pages.
+    await page.goto(applyUrl, { waitUntil: "commit", timeout: 30000 });
+    // Best-effort DOMContentLoaded wait for normal pages; ignored on
+    // the misbehaving ones, where humanDelay below covers the gap.
+    await page.waitForLoadState("domcontentloaded", { timeout: 20000 }).catch(() => {});
 
     // Wait for Cloudflare challenge to auto-resolve (if present)
     const cfChallenge = await page.evaluate(() =>
