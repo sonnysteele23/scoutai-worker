@@ -224,10 +224,20 @@ export function writeTempResume(base64: string, fileName: string): string {
 
 /**
  * Take a screenshot and return as base64 PNG.
+ *
+ * 10s timeout + swallow-on-miss. The confirmation screenshot at the
+ * end of the apply flow is for the user's audit trail, not
+ * correctness — losing it on a slow page (Webflow's Greenhouse install
+ * blew through Playwright's default 30s, 2026-05-12) is strictly
+ * better than failing the whole apply.
  */
 export async function screenshot(page: Page): Promise<string> {
-  const buf = await page.screenshot({ type: "png", fullPage: false });
-  return buf.toString("base64");
+  try {
+    const buf = await page.screenshot({ type: "png", fullPage: false, timeout: 10000 });
+    return buf.toString("base64");
+  } catch {
+    return "";
+  }
 }
 
 /**
