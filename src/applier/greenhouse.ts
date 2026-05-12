@@ -39,20 +39,21 @@ export async function applyGreenhouse(
 
   try {
     console.log(`[greenhouse] Navigating to ${applyUrl}`);
-    // Use waitUntil:"commit" — returns when the navigation response is
-    // received, before the page parses or DOMContentLoaded fires. A
-    // fraction of Greenhouse customers (verified on Webflow 2026-05-11)
-    // ship a script payload that never fires DOMContentLoaded under
-    // Playwright headless, so the prior "domcontentloaded" wait timed
-    // out at both 30s and 60s even though the page loaded fine in real
-    // Chrome. The Cloudflare-challenge poll + humanDelay/humanScan
-    // sequence below gives the page plenty of time to render before we
-    // touch the form, so dropping the goto-side wait doesn't cost
-    // anything for normal pages.
-    await page.goto(applyUrl, { waitUntil: "commit", timeout: 30000 });
+    // Hard-cap page.goto via Promise.race — Playwright's own timeout
+    // option has been observed to never fire on Webflow's Greenhouse
+    // page (probably the residential proxy + stealth-mode handshake
+    // never receiving response headers), leaving the orchestrator to
+    // wait for the queue's 360s timeout instead of bailing at 30s.
+    const gotoPromise = page.goto(applyUrl, { waitUntil: "commit", timeout: 30000 });
+    const gotoRace = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("page.goto outer-race timeout 35s")), 35000)
+    );
+    await Promise.race([gotoPromise, gotoRace]);
+    console.log(`[greenhouse] Navigation committed`);
     // Best-effort DOMContentLoaded wait for normal pages; ignored on
     // the misbehaving ones, where humanDelay below covers the gap.
     await page.waitForLoadState("domcontentloaded", { timeout: 20000 }).catch(() => {});
+    console.log(`[greenhouse] DCL wait done`);
 
     // Wait for Cloudflare challenge to auto-resolve (if present).
     // null-guard document.body — with waitUntil:"commit" + a swallowed
