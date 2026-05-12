@@ -46,7 +46,8 @@ export async function applyAshby(
       : applyUrl.replace(/\/?$/, "/application");
 
     console.log(`[ashby] Navigating to ${formUrl}`);
-    await page.goto(formUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // 60s — see greenhouse.ts comment on heavy-customer DOMContentLoaded delays.
+    await page.goto(formUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForTimeout(2000);
 
     // Wait for Cloudflare challenge if present

@@ -39,7 +39,12 @@ export async function applyGreenhouse(
 
   try {
     console.log(`[greenhouse] Navigating to ${applyUrl}`);
-    await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // 60s timeout: Webflow + a few other Greenhouse customers ship heavy
+    // sync analytics that delay DOMContentLoaded past the 30s default
+    // (Webflow auto-apply failed exactly this way 2026-05-11). Real
+    // network is sub-second, so 60s is purely safety margin — the page
+    // either loads in <10s or it's genuinely broken.
+    await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
 
     // Wait for Cloudflare challenge to auto-resolve (if present)
     const cfChallenge = await page.evaluate(() =>

@@ -58,7 +58,8 @@ export async function applyIndeed(
 
   try {
     console.log(`[indeed] Navigating to ${applyUrl}`);
-    await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // 60s — see greenhouse.ts comment on heavy-customer DOMContentLoaded delays.
+    await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
 
     // ── Wait for Cloudflare challenge ────────────────────────────────────
     await waitForCloudflare(page);
