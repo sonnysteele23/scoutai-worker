@@ -303,24 +303,37 @@ export async function humanType(page: Page, selector: string, text: string): Pro
   }
 }
 
-/** Scroll page like a human (not instant) */
+/** Scroll page like a human (not instant). Each wheel event is raced
+ *  against a 2s timeout for the same reason humanScan is — hung mouse
+ *  CDP dispatch on certain pages would otherwise stall the apply flow. */
 export async function humanScroll(page: Page, distance = 400): Promise<void> {
   const steps = 3 + Math.floor(Math.random() * 5);
   const stepDist = distance / steps;
   for (let i = 0; i < steps; i++) {
-    await page.mouse.wheel(0, stepDist);
+    const wheelPromise = page.mouse.wheel(0, stepDist);
+    const wheelRace = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    await Promise.race([wheelPromise, wheelRace]).catch(() => { /* swallow */ });
     await humanDelay(50, 150);
   }
   await humanDelay(300, 800);
 }
 
-/** Random mouse movement to simulate reading/scanning */
+/** Random mouse movement to simulate reading/scanning.
+ *
+ * Resilient: each page.mouse.move is raced against a 2s timeout because
+ * some pages (Webflow's Greenhouse install, 2026-05-12) install a
+ * synchronous mousemove handler that hangs Playwright's CDP dispatch
+ * indefinitely. humanScan is for bot-detection stealth, not correctness
+ * — silently skipping a hung move is strictly better than blocking
+ * the rest of the apply flow for 30s+. */
 export async function humanScan(page: Page): Promise<void> {
   const moves = 2 + Math.floor(Math.random() * 4);
   for (let i = 0; i < moves; i++) {
     const x = 200 + Math.floor(Math.random() * 800);
     const y = 100 + Math.floor(Math.random() * 600);
-    await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 10) });
+    const movePromise = page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 10) });
+    const moveRace = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    await Promise.race([movePromise, moveRace]).catch(() => { /* swallow */ });
     await humanDelay(200, 600);
   }
 }
