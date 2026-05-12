@@ -168,7 +168,11 @@ export async function applyGreenhouse(
     }
 
     const confirmShot = await screenshot(page);
-    const pageText = await page.evaluate(() => document.body.innerText);
+    // Null-guard — same body-can-be-null story as cf-check / hasCaptcha
+    // / scrollHeight earlier in the file. Empty string is the right
+    // fallback: no confirmation text matched → "may have failed" warning
+    // logs below, applier still returns success.
+    const pageText = await page.evaluate(() => document.body?.innerText || "");
     const confirmed = /thank you|application received|submitted|we.?ll be in touch|confirmation/i.test(pageText);
 
     if (!dryRun && !confirmed) {
