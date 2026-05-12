@@ -57,6 +57,11 @@ export interface ApplyJobResult {
   failureCategory?: "missing_field" | "captcha" | "portal_unsupported" | "custom_question" | "timeout" | "other";
   tokensUsed: number;
   durationMs: number;
+  // Echoed from the originating ApplyJobRequest. Saas uses this to skip
+  // the Application row upsert on dry-run "applied" results — without
+  // it, every successful form-fill simulation would pollute the user's
+  // application tracker.
+  dryRun?: boolean;
 }
 
 export interface QueuedJob {

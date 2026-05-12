@@ -134,6 +134,7 @@ export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult
       autoApplyJobId: req.autoApplyJobId,
       tokensUsed: getTokensUsed(),
       durationMs: Date.now() - startMs,
+      dryRun: req.dryRun ?? false,
       ...result,
     };
 
@@ -148,6 +149,7 @@ export async function executeApply(req: ApplyJobRequest): Promise<ApplyJobResult
       tokensUsed: getTokensUsed(),
       durationMs: Date.now() - startMs,
       questionsAnswered: [],
+      dryRun: req.dryRun ?? false,
     };
   } finally {
     await ctx.close().catch(() => {});

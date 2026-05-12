@@ -86,6 +86,7 @@ async function processNext(): Promise<void> {
       tokensUsed: 0,
       durationMs: Date.now() - (next.startedAt?.getTime() || Date.now()),
       questionsAnswered: [],
+      dryRun: next.request.dryRun ?? false,
     };
     await notifyScoutAI(failResult);
   } finally {
