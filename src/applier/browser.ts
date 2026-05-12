@@ -129,8 +129,14 @@ export async function createContext(browser: Browser): Promise<BrowserContext> {
  * Returns cleaned text representation of all interactive elements.
  */
 export async function getPageSnapshot(page: Page): Promise<string> {
-  // Wait for network idle and main content
-  await page.waitForLoadState("domcontentloaded");
+  // Best-effort DCL wait — by the time we reach this function, the
+  // applier has already waited several seconds via humanDelay/scan/
+  // scroll, so DCL is usually already fired. On pages that never fire
+  // DCL under Playwright (Webflow's Greenhouse install) we swallow the
+  // timeout and snapshot whatever's rendered. Without this catch the
+  // applier blew up on `page.waitForLoadState: Timeout 30000ms
+  // exceeded` 2026-05-12.
+  await page.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1500);
 
   // Extract all form fields with labels
