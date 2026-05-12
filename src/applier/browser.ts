@@ -230,7 +230,11 @@ export async function screenshot(page: Page): Promise<string> {
  */
 export async function hasCaptcha(page: Page): Promise<boolean> {
   return page.evaluate(() => {
-    const text = document.body.innerText.toLowerCase();
+    // Null-guard: with waitUntil:"commit" the document exists before
+    // body is parsed, and pages that hang document.body parsing (Webflow's
+    // Greenhouse install, 2026-05-12) make `document.body.innerText`
+    // throw "Cannot read properties of null".
+    const text = (document.body?.innerText || "").toLowerCase();
 
     // Visible challenge text
     if (text.includes("prove you're human") || text.includes("i'm not a robot")) return true;
