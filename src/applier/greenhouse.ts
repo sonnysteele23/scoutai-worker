@@ -54,19 +54,22 @@ export async function applyGreenhouse(
     // the misbehaving ones, where humanDelay below covers the gap.
     await page.waitForLoadState("domcontentloaded", { timeout: 20000 }).catch(() => {});
 
-    // Wait for Cloudflare challenge to auto-resolve (if present)
-    const cfChallenge = await page.evaluate(() =>
-      document.body.innerText.toLowerCase().includes("checking your browser") ||
-      document.body.innerText.toLowerCase().includes("just a moment")
-    );
+    // Wait for Cloudflare challenge to auto-resolve (if present).
+    // null-guard document.body — with waitUntil:"commit" + a swallowed
+    // DOMContentLoaded wait, body may not be parsed yet when this fires
+    // (caught against Webflow 2026-05-12 with the new commit-strategy).
+    const readCfText = () => {
+      try {
+        const t = document.body?.innerText?.toLowerCase() || "";
+        return t.includes("checking your browser") || t.includes("just a moment");
+      } catch { return false; }
+    };
+    const cfChallenge = await page.evaluate(readCfText);
     if (cfChallenge) {
       console.log("[greenhouse] Cloudflare challenge detected — waiting for auto-resolve...");
       for (let i = 0; i < 15; i++) {
         await page.waitForTimeout(1000);
-        const still = await page.evaluate(() =>
-          document.body.innerText.toLowerCase().includes("checking your browser") ||
-          document.body.innerText.toLowerCase().includes("just a moment")
-        );
+        const still = await page.evaluate(readCfText);
         if (!still) { console.log(`[greenhouse] Cloudflare resolved after ${i + 1}s`); break; }
       }
       await page.waitForTimeout(2000);
