@@ -91,7 +91,7 @@ export async function applyWorkday(
       await page.waitForTimeout(1500);
       await dismissCookieDialog(page);
 
-      const pageText = await page.evaluate(() => document.body.innerText.toLowerCase());
+      const pageText = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
       const currentUrl = page.url();
       console.log(`[workday] Step ${pageNum + 1}, URL: ${currentUrl}`);
 
@@ -183,7 +183,7 @@ export async function applyWorkday(
 
     // ── Take confirmation screenshot ──────────────────────────────────
     const confirmShot = await screenshot(page);
-    const finalText = await page.evaluate(() => document.body.innerText);
+    const finalText = await page.evaluate(() => (document.body?.innerText || ""));
     const confirmed = isConfirmationPage(finalText.toLowerCase());
 
     if (!dryRun && !confirmed) {
@@ -208,16 +208,16 @@ export async function applyWorkday(
 
 async function waitForCloudflare(page: Page): Promise<void> {
   const cfChallenge = await page.evaluate(() =>
-    document.body.innerText.toLowerCase().includes("checking your browser") ||
-    document.body.innerText.toLowerCase().includes("just a moment")
+    (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+    (document.body?.innerText || "").toLowerCase().includes("just a moment")
   );
   if (cfChallenge) {
     console.log("[workday] Cloudflare challenge detected — waiting for auto-resolve...");
     for (let i = 0; i < 15; i++) {
       await page.waitForTimeout(1000);
       const still = await page.evaluate(() =>
-        document.body.innerText.toLowerCase().includes("checking your browser") ||
-        document.body.innerText.toLowerCase().includes("just a moment")
+        (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+        (document.body?.innerText || "").toLowerCase().includes("just a moment")
       );
       if (!still) { console.log(`[workday] Cloudflare resolved after ${i + 1}s`); break; }
     }
@@ -296,7 +296,7 @@ async function clickApplyButton(page: Page): Promise<void> {
  * Workday sites often require an account but some offer a guest path.
  */
 async function handleAuthGate(page: Page): Promise<void> {
-  const pageText = await page.evaluate(() => document.body.innerText.toLowerCase());
+  const pageText = await page.evaluate(() => (document.body?.innerText || "").toLowerCase());
 
   // Check if we're on a sign-in / create account page
   const isAuthPage = pageText.includes("sign in") || pageText.includes("create account") ||
@@ -663,7 +663,7 @@ async function clickNextOrContinue(page: Page): Promise<boolean> {
 async function submitWorkday(page: Page): Promise<boolean> {
   await page.keyboard.press("End");
   await page.waitForTimeout(500);
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.evaluate(() => window.scrollTo(0, (document.body?.scrollHeight ?? document.documentElement?.scrollHeight ?? 0)));
   await page.waitForTimeout(500);
 
   // Remove overlays

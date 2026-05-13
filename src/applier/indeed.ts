@@ -259,7 +259,7 @@ export async function applyIndeed(
 
     // ── Confirmation ─────────────────────────────────────────────────────
     const confirmShot = await screenshot(page);
-    const pageText = await page.evaluate(() => document.body.innerText);
+    const pageText = await page.evaluate(() => (document.body?.innerText || ""));
     const confirmed =
       /thank you|application (has been |was )?submitted|application received|we.?ll be in touch|successfully applied/i.test(
         pageText
@@ -291,8 +291,8 @@ export async function applyIndeed(
 async function waitForCloudflare(page: Page): Promise<void> {
   const cfChallenge = await page.evaluate(
     () =>
-      document.body.innerText.toLowerCase().includes("checking your browser") ||
-      document.body.innerText.toLowerCase().includes("just a moment")
+      (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+      (document.body?.innerText || "").toLowerCase().includes("just a moment")
   );
   if (cfChallenge) {
     console.log("[indeed] Cloudflare challenge detected — waiting for auto-resolve...");
@@ -300,8 +300,8 @@ async function waitForCloudflare(page: Page): Promise<void> {
       await page.waitForTimeout(1000);
       const still = await page.evaluate(
         () =>
-          document.body.innerText.toLowerCase().includes("checking your browser") ||
-          document.body.innerText.toLowerCase().includes("just a moment")
+          (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+          (document.body?.innerText || "").toLowerCase().includes("just a moment")
       );
       if (!still) {
         console.log(`[indeed] Cloudflare resolved after ${i + 1}s`);
@@ -355,7 +355,7 @@ async function isLoginRequired(page: Page): Promise<boolean> {
       return true;
     }
     return await page.evaluate(() => {
-      const text = document.body.innerText.toLowerCase();
+      const text = (document.body?.innerText || "").toLowerCase();
       const hasLoginForm =
         !!document.querySelector("#login-email-input") ||
         !!document.querySelector("[data-testid='login-form']") ||
@@ -422,7 +422,7 @@ async function detectPageState(
   page: Page
 ): Promise<"resume" | "form" | "review" | "confirmation" | "error"> {
   return await page.evaluate(() => {
-    const text = document.body.innerText.toLowerCase();
+    const text = (document.body?.innerText || "").toLowerCase();
 
     // Confirmation
     if (
@@ -461,7 +461,7 @@ async function detectPageState(
 
 async function isReviewPage(page: Page): Promise<boolean> {
   return await page.evaluate(() => {
-    const text = document.body.innerText.toLowerCase();
+    const text = (document.body?.innerText || "").toLowerCase();
     // Check for review indicators
     if (
       text.includes("review your application") ||
@@ -682,7 +682,7 @@ async function clickContinue(page: Page): Promise<boolean> {
 async function clickSubmit(page: Page): Promise<boolean> {
   // Scroll to bottom and clear overlays
   await page.evaluate(() => {
-    window.scrollTo(0, document.body.scrollHeight);
+    window.scrollTo(0, (document.body?.scrollHeight ?? document.documentElement?.scrollHeight ?? 0));
     document
       .querySelectorAll("[role='dialog'], .cookieconsent, [aria-label='cookieconsent'], .cc-window")
       .forEach((el) => {

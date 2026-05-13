@@ -47,8 +47,8 @@ export async function applyLever(
 
     // Wait for Cloudflare challenge to auto-resolve (if present)
     const cfChallenge = await page.evaluate(() =>
-      document.body.innerText.toLowerCase().includes("checking your browser") ||
-      document.body.innerText.toLowerCase().includes("just a moment")
+      (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+      (document.body?.innerText || "").toLowerCase().includes("just a moment")
     );
     if (cfChallenge) {
       console.log("[lever] Cloudflare challenge detected — waiting for auto-resolve...");
@@ -56,8 +56,8 @@ export async function applyLever(
       for (let i = 0; i < 15; i++) {
         await page.waitForTimeout(1000);
         const still = await page.evaluate(() =>
-          document.body.innerText.toLowerCase().includes("checking your browser") ||
-          document.body.innerText.toLowerCase().includes("just a moment")
+          (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+          (document.body?.innerText || "").toLowerCase().includes("just a moment")
         );
         if (!still) { console.log(`[lever] Cloudflare resolved after ${i + 1}s`); break; }
       }
@@ -92,14 +92,14 @@ export async function applyLever(
 
     // Diagnostic: log what the page looks like from the worker
     const pageTitle = await page.title();
-    const pageText = await page.evaluate(() => document.body.innerText.substring(0, 500));
+    const pageText = await page.evaluate(() => (document.body?.innerText || "").substring(0, 500));
     const pageUrl = page.url();
     console.log(`[lever] Page loaded: "${pageTitle}" @ ${pageUrl}`);
     console.log(`[lever] Page text preview: ${pageText.substring(0, 200)}`);
 
     // Check if this is a full-page CAPTCHA block (can't see the form at all)
     const isFullPageBlock = await page.evaluate(() => {
-      const text = document.body.innerText.toLowerCase();
+      const text = (document.body?.innerText || "").toLowerCase();
       const hasForm = !!document.querySelector("input[type='text'], input[type='email'], textarea");
       return !hasForm && (text.includes("verify") || text.includes("checking") || text.includes("captcha"));
     });
@@ -175,7 +175,7 @@ export async function applyLever(
           await page.waitForTimeout(3000);
 
           // Check if CAPTCHA auto-submitted the form (some implementations do this)
-          const autoSubmitted = await page.evaluate(() => /thank you|application received|submitted|confirmation/i.test(document.body.innerText));
+          const autoSubmitted = await page.evaluate(() => /thank you|application received|submitted|confirmation/i.test((document.body?.innerText || "")));
           if (autoSubmitted) {
             console.log("[lever] CAPTCHA callback auto-submitted the form!");
             const shot = await screenshot(page);
@@ -187,7 +187,7 @@ export async function applyLever(
           await page.waitForTimeout(3000);
         } else {
           // Even if solver fails, check if submission went through anyway
-          const postText = await page.evaluate(() => document.body.innerText);
+          const postText = await page.evaluate(() => (document.body?.innerText || ""));
           if (/thank you|application received|submitted|confirmation/i.test(postText)) {
             console.log("[lever] Application submitted despite CAPTCHA solver failure!");
             const shot = await screenshot(page);
@@ -198,14 +198,14 @@ export async function applyLever(
       }
 
       // Also check if it actually submitted without CAPTCHA
-      const postSubmitText = await page.evaluate(() => document.body.innerText);
+      const postSubmitText = await page.evaluate(() => (document.body?.innerText || ""));
       if (/thank you|application received|submitted|confirmation|we.?ll be in touch/i.test(postSubmitText)) {
         console.log("[lever] Application confirmed after submit!");
       }
     }
 
     const shot = await screenshot(page);
-    const text = await page.evaluate(() => document.body.innerText);
+    const text = await page.evaluate(() => (document.body?.innerText || ""));
     const confirmed = /thank you|application received|submitted|confirmation|on file/i.test(text);
     if (!dryRun && !confirmed) console.warn("[lever] Confirmation text not found");
 
@@ -341,7 +341,7 @@ async function submitLever(page: Page): Promise<boolean> {
   // Scroll to absolute bottom
   await page.keyboard.press("End");
   await page.waitForTimeout(500);
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.evaluate(() => window.scrollTo(0, (document.body?.scrollHeight ?? document.documentElement?.scrollHeight ?? 0)));
   await page.waitForTimeout(1000);
 
   // Remove any cookie consent dialogs that might overlay the submit button

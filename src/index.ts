@@ -168,7 +168,7 @@ app.get("/diagnose", requireSecret, async (req: Request, res: Response) => {
     await page.waitForTimeout(3000);
 
     const title = await page.title();
-    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 500));
+    const bodyText = await page.evaluate(() => (document.body?.innerText || "").substring(0, 500));
     const captchaDetected = await hasCaptcha(page);
     const captchaInfo = await detectCaptcha(page);
     const iframes = await page.evaluate(() =>

@@ -52,16 +52,16 @@ export async function applyAshby(
 
     // Wait for Cloudflare challenge if present
     const cfChallenge = await page.evaluate(() =>
-      document.body.innerText.toLowerCase().includes("checking your browser") ||
-      document.body.innerText.toLowerCase().includes("just a moment")
+      (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+      (document.body?.innerText || "").toLowerCase().includes("just a moment")
     );
     if (cfChallenge) {
       console.log("[ashby] Cloudflare challenge — waiting...");
       for (let i = 0; i < 15; i++) {
         await page.waitForTimeout(1000);
         const still = await page.evaluate(() =>
-          document.body.innerText.toLowerCase().includes("checking your browser") ||
-          document.body.innerText.toLowerCase().includes("just a moment")
+          (document.body?.innerText || "").toLowerCase().includes("checking your browser") ||
+          (document.body?.innerText || "").toLowerCase().includes("just a moment")
         );
         if (!still) { console.log(`[ashby] Cloudflare resolved after ${i + 1}s`); break; }
       }
@@ -85,7 +85,7 @@ export async function applyAshby(
     // Check for full-page CAPTCHA block vs passive
     const isFullPageBlock = await page.evaluate(() => {
       const hasForm = !!document.querySelector("input[type='text'], input[type='email'], textarea");
-      const text = document.body.innerText.toLowerCase();
+      const text = (document.body?.innerText || "").toLowerCase();
       return !hasForm && (text.includes("verify") || text.includes("captcha"));
     });
 
@@ -176,7 +176,7 @@ export async function applyAshby(
     }
 
     const shot = await screenshot(page);
-    const text = await page.evaluate(() => document.body.innerText);
+    const text = await page.evaluate(() => (document.body?.innerText || ""));
     const confirmed = /thank you|application received|submitted|confirmation|we.?ll be in touch/i.test(text);
     if (!dryRun && !confirmed) console.warn("[ashby] Confirmation text not found");
 
