@@ -311,22 +311,77 @@ async function submitForm(page: Page): Promise<boolean> {
   });
   await page.waitForTimeout(500);
 
-  // Primary: JS click (bypasses overlay issues)
+  // Primary: JS click (bypasses overlay issues).
+  //
+  // Greenhouse runs on two domains with different markup:
+  //   - Legacy boards.greenhouse.io: <input type="submit" value="Submit Application">
+  //     plus the #submit_app id, plus plain <button>Submit Application</button>.
+  //   - New job-boards.greenhouse.io (React SPA): <form id="application-form">
+  //     with a <button type="submit" class="btn btn--rounded"> at the bottom.
+  //     The button's visible text is rendered by React after hydration and
+  //     can be empty in the static DOM (or wrapped in a nested span the
+  //     old textContent walk missed). Scoping to #application-form catches
+  //     it regardless of text/aria-label localisation.
   const clicked = await page.evaluate(() => {
-    // Greenhouse uses input[type=submit] with value "Submit Application"
+    const visited: string[] = [];
+    const tryClick = (el: HTMLElement | null, label: string): string | null => {
+      if (!el) return null;
+      visited.push(label);
+      el.scrollIntoView({ block: "center" });
+      el.click();
+      return label;
+    };
+
+    // 1. Legacy: input[type=submit] (often "Submit Application")
     const submitInput = document.querySelector<HTMLInputElement>("input[type='submit']");
-    if (submitInput) { submitInput.click(); return submitInput.value || "input-submit"; }
-    const buttons = Array.from(document.querySelectorAll("button"));
-    for (const btn of buttons) {
-      const text = btn.textContent?.trim().toLowerCase() || "";
-      if (text.includes("submit application") || text.includes("submit")) {
-        btn.scrollIntoView({ block: "center" });
-        btn.click();
-        return text;
+    if (submitInput) {
+      const r = tryClick(submitInput, submitInput.value || "input-submit");
+      if (r) return r;
+    }
+
+    // 2. New SPA: form-scoped submit button. The form id is stable across
+    // Greenhouse SPA pages.
+    const form = document.querySelector<HTMLFormElement>("#application-form, form.application--form, form[id*='application' i]");
+    if (form) {
+      const formSubmit = form.querySelector<HTMLButtonElement>("button[type='submit'], input[type='submit']");
+      if (formSubmit) {
+        const r = tryClick(formSubmit, `form-scoped:${formSubmit.tagName.toLowerCase()}`);
+        if (r) return r;
       }
     }
+
+    // 3. Any button matching common submit-y text / aria-label patterns.
+    // textContent can be empty when React mounts the label inside a child
+    // span — also probe aria-label and data-testid so an icon-only or
+    // localised button still matches.
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+    const re = /submit|apply|send application/i;
+    for (const btn of buttons) {
+      const haystack = [
+        btn.textContent || "",
+        btn.getAttribute("aria-label") || "",
+        btn.getAttribute("data-testid") || "",
+        btn.getAttribute("name") || "",
+        btn.id || "",
+      ].join(" ");
+      if (re.test(haystack)) {
+        const r = tryClick(btn, `text-match:${haystack.trim().slice(0, 40)}`);
+        if (r) return r;
+      }
+    }
+
+    // 4. Legacy id fallback.
     const byId = document.querySelector<HTMLElement>("#submit_app");
-    if (byId) { byId.click(); return "submit_app"; }
+    if (byId) {
+      const r = tryClick(byId, "submit_app");
+      if (r) return r;
+    }
+
+    // Nothing matched — return diagnostics so the failure log shows
+    // exactly what the page looked like.
+    const allBtnCount = document.querySelectorAll("button").length;
+    const submitTypeCount = document.querySelectorAll("button[type='submit'], input[type='submit']").length;
+    console.warn(`[greenhouse-submit-debug] no match. tried=${visited.join("|") || "(none)"} buttons=${allBtnCount} submit-typed=${submitTypeCount}`);
     return null;
   });
 
@@ -335,8 +390,9 @@ async function submitForm(page: Page): Promise<boolean> {
     return true;
   }
 
-  // Fallback: Playwright locator with force
-  const btn = page.locator("input[type='submit'], button[type='submit']").first();
+  // Fallback: Playwright locator with force (handles cases where JS click
+  // happens but the click handler hadn't hydrated yet).
+  const btn = page.locator("#application-form button[type='submit'], form.application--form button[type='submit'], input[type='submit'], button[type='submit']").first();
   if (await btn.count() > 0) {
     await btn.click({ force: true, timeout: 5000 }).catch(() => {});
     console.log("[greenhouse] Submitted via force click");
